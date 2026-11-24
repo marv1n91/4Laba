@@ -1,0 +1,12 @@
+Sorting algorithms are a fundamental part of computer science and software engineering.
+Every programmer learns how sorting works because sorted data makes searching, grouping, and analysis much faster.
+When you sort a list of words or numbers, you arrange the items in a clear order.
+Bubble sort compares adjacent elements and swaps them when they are in the wrong order.
+Insertion sort builds a sorted section one element at a time, shifting larger elements to the right.
+Merge sort divides the array into smaller halves, sorts each half, and merges the sorted halves back together.
+Quick sort chooses a pivot value and partitions the array into smaller and larger elements.
+Radix sort and ABC sort group words by their characters without comparing whole words directly.
+Good algorithms save time and memory when working with large text files, big tables, and complex data.
+Practice with sorting algorithms helps students understand recursion, arrays, files, and algorithm performance.
+Sorting words in lexicographic order puts identical words next to each other, so counting word frequency becomes simple and fast.
+Computer science students compare sorting algorithms on small lists and large lists to see how fast each algorithm runs.
