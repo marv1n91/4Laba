@@ -1,0 +1,171 @@
+<UserControl x:Class="SortingLab4.App.Views.LexicographicSortView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="0,4,4,12">
+            <!-- Ввод текста -->
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,8">
+                        <TextBlock Text="1. Обработка текста и лексикографическая сортировка слов" FontSize="15.5" FontWeight="Bold" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="Загрузить пример (English)" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" Click="LoadSample_Click" />
+                            <Button Content="Загрузить файл (.txt)" Style="{StaticResource SecondaryButton}" Click="UploadTxt_Click" />
+                        </StackPanel>
+                    </DockPanel>
+
+                    <TextBox x:Name="TxtInput" AcceptsReturn="True" TextWrapping="Wrap" Height="96"
+                             Padding="8,6" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto">
+                        <TextBox.Template>
+                            <ControlTemplate TargetType="TextBox">
+                                <Border x:Name="Bd" Background="White" BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="4">
+                                    <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Stretch" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#2563EB" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </TextBox.Template>
+                    </TextBox>
+
+                    <DockPanel Margin="0,10,0,0">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                            <ComboBox x:Name="CmbLexAlgo" SelectedIndex="0" Width="300" Margin="0,0,12,0">
+                                <ComboBoxItem Content="Алгоритм 1: Quick Sort (Хоара)" Tag="Quick" />
+                                <ComboBoxItem Content="Алгоритм 1 (альт.): Merge Sort (Слиянием)" Tag="Merge" />
+                                <ComboBoxItem Content="Алгоритм 2: ABC-сортировка / MSD Radix Sort" Tag="Radix" />
+                            </ComboBox>
+                            <CheckBox x:Name="ChkLowercase" Content="Приводить к нижнему регистру" IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" />
+                            <Button Content="Отсортировать и посчитать частоты" Style="{StaticResource PrimaryButton}" Click="SortText_Click" />
+                        </StackPanel>
+                    </DockPanel>
+
+                    <Border x:Name="ErrBanner" Visibility="Collapsed" Background="#FEE2E2" BorderBrush="#FECACA" BorderThickness="1"
+                            CornerRadius="7" Padding="10,7" Margin="0,10,0,0">
+                        <TextBlock x:Name="TxtError" Foreground="#991B1B" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Пояснение и статистика -->
+            <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="10" Padding="14,11" Margin="0,0,0,12">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,4">
+                        <Border Background="#DBEAFE" CornerRadius="10" Padding="9,2" DockPanel.Dock="Left">
+                            <TextBlock x:Name="TxtLexBadge" Text="Готово" FontSize="12" FontWeight="Bold" Foreground="#1D4ED8" />
+                        </Border>
+                        <TextBlock x:Name="TxtLexStats" Text="Всего слов: 0  |  Уникальных: 0  |  Время: 0 мс"
+                                   HorizontalAlignment="Right" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" />
+                    </DockPanel>
+                    <TextBlock x:Name="TxtLexExplanation" TextWrapping="Wrap" FontSize="14.5"
+                               Text="Загрузите текст и нажмите «Отсортировать и посчитать частоты». Одинаковые слова встанут рядом, и программа подсчитает их количество." />
+                </StackPanel>
+            </Border>
+
+            <!-- Отсортированные слова + Таблица частот -->
+            <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <TextBlock Text="Отсортированная последовательность слов" FontSize="15" FontWeight="Bold" />
+                            <TextBlock x:Name="TxtSortedWordsCount" Text="0 слов" HorizontalAlignment="Right" Foreground="{StaticResource TextMutedBrush}" />
+                        </DockPanel>
+                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10" Height="230">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <WrapPanel x:Name="SortedWordsPanel" />
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <TextBlock Text="Частота встречаемости слов" FontSize="15" FontWeight="Bold" />
+                            <TextBlock x:Name="TxtFreqCount" Text="0 уникальных" HorizontalAlignment="Right" Foreground="{StaticResource TextMutedBrush}" />
+                        </DockPanel>
+                        <DataGrid x:Name="GridFrequencies" AutoGenerateColumns="False" Height="230">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Слово" Binding="{Binding Word}" Width="*" />
+                                <DataGridTextColumn Header="Количество" Binding="{Binding Count}" Width="130" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Эксперименты производительности -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="2. Эксперименты производительности (100, 500, 1000, 2000, 5000 слов)" FontSize="15.5" FontWeight="Bold" />
+                    <TextBlock Text="Оба алгоритма запускаются на одинаковых наборах данных; замеряется чистое время сортировки (среднее по нескольким прогонам)."
+                               FontSize="12.5" Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,12" />
+
+                    <WrapPanel Margin="0,0,0,12" VerticalAlignment="Center">
+                        <StackPanel Margin="0,0,12,6">
+                            <TextBlock Text="Алгоритм 1:" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,3" />
+                            <ComboBox x:Name="CmbBenchAlgo1" SelectedIndex="0" Width="210">
+                                <ComboBoxItem Content="Quick Sort (Хоара)" Tag="Quick" />
+                                <ComboBoxItem Content="Merge Sort (Слиянием)" Tag="Merge" />
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,12,6">
+                            <TextBlock Text="Алгоритм 2:" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,3" />
+                            <ComboBox x:Name="CmbBenchAlgo2" SelectedIndex="0" Width="210">
+                                <ComboBoxItem Content="ABC / MSD Radix Sort" Tag="Radix" />
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,12,6">
+                            <TextBlock Text="Повторов для усреднения:" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,3" />
+                            <ComboBox x:Name="CmbRepeats" SelectedIndex="1" Width="130">
+                                <ComboBoxItem Content="3 прогона" Tag="3" />
+                                <ComboBoxItem Content="5 прогонов" Tag="5" />
+                                <ComboBoxItem Content="10 прогонов" Tag="10" />
+                            </ComboBox>
+                        </StackPanel>
+
+                        <Button x:Name="BtnRunBench" Content="Провести эксперименты" Style="{StaticResource PrimaryButton}"
+                                VerticalAlignment="Bottom" Margin="0,0,0,6" Click="RunBenchmarks_Click" />
+                    </WrapPanel>
+
+                    <TextBlock x:Name="TxtBenchStatus" FontSize="12.5" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,10"
+                               Text="Нажмите «Провести эксперименты», чтобы получить таблицу и график замеров." />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.1*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+
+                        <DataGrid Grid.Column="0" x:Name="GridBench" AutoGenerateColumns="False" MinHeight="240">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Слов" Binding="{Binding WordCount}" Width="70" />
+                                <DataGridTextColumn Header="Алгоритм 1" Binding="{Binding Algorithm1Name}" Width="*" />
+                                <DataGridTextColumn Header="Время 1" Binding="{Binding Time1Formatted}" Width="90" />
+                                <DataGridTextColumn Header="Алгоритм 2" Binding="{Binding Algorithm2Name}" Width="*" />
+                                <DataGridTextColumn Header="Время 2" Binding="{Binding Time2Formatted}" Width="90" />
+                                <DataGridTextColumn Header="Совп." Binding="{Binding MatchLabel}" Width="60" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <Border Grid.Column="2" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10">
+                            <Canvas x:Name="ChartCanvas" Width="500" Height="250" />
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
