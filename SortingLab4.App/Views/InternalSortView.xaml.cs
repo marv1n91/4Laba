@@ -457,7 +457,8 @@ public partial class InternalSortView : UserControl
     private double ComputeBarHeight(double val)
     {
         double canvasH = BarsCanvas.ActualHeight > 0 ? BarsCanvas.ActualHeight : 280;
-        double maxBarH = Math.Max(1, canvasH - 68);
+        double verticalReserve = _currentAlgo == InternalSortAlgorithm.QuickHoare ? 96 : 68;
+        double maxBarH = Math.Max(1, canvasH - verticalReserve);
         double minBarH = Math.Min(30, maxBarH);
         double norm = (val - _barMin) / _barSpan;
         return minBarH + norm * (maxBarH - minBarH);
@@ -490,9 +491,12 @@ public partial class InternalSortView : UserControl
             b.BarRect.CornerRadius = cornerRadius;
             b.BarRect.Padding = padding;
             b.ValueText.Visibility = labelVisibility;
-            b.IndexText.Visibility = labelVisibility;
-            b.IndexText.Text = (i + 1).ToString();
-            b.Root.ToolTip = $"Позиция {i + 1}, значение {b.ValueText.Text}";
+            int position = i + 1;
+            bool showIndex = showLabels || position == 1 || position % 5 == 0 || position == _bars.Count;
+            b.IndexText.Visibility = showIndex ? Visibility.Visible : Visibility.Collapsed;
+            b.IndexText.FontSize = showLabels ? 11 : Math.Min(9, _colWidth * 0.9);
+            b.IndexText.Text = position.ToString();
+            b.Root.ToolTip = $"Позиция {position}, значение {b.ValueText.Text}";
 
             Canvas.SetTop(b.Root, y);
             if (animated)
@@ -604,7 +608,7 @@ public partial class InternalSortView : UserControl
     {
         if (_tagI is null || _tagJ is null || _tagPivot is null || _tagKey is null) return;
 
-        void PositionTag(Border tag, int? idx, double topOffset)
+        void PositionTag(Border tag, string name, int? idx, double topOffset)
         {
             if (idx is null || idx.Value < 0 || idx.Value >= _bars.Count)
             {
@@ -613,8 +617,12 @@ public partial class InternalSortView : UserControl
             }
             bool wasHidden = tag.Visibility != Visibility.Visible;
             tag.Visibility = Visibility.Visible;
-            double x = _startX + idx.Value * _colStep + (_colWidth - tag.ActualWidth) / 2.0;
-            if (tag.ActualWidth < 1) x = _startX + idx.Value * _colStep + 4;
+            if (tag.Child is TextBlock label) label.Text = $"{name} · {idx.Value + 1}";
+            tag.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double center = _startX + idx.Value * _colStep + _colWidth / 2;
+            double tagWidth = tag.DesiredSize.Width;
+            double maxLeft = Math.Max(0, BarsCanvas.ActualWidth - tagWidth);
+            double x = Math.Clamp(center - tagWidth / 2, 0, maxLeft);
             Canvas.SetTop(tag, topOffset);
             if (animated && !wasHidden)
                 UiAnimations.AnimateCanvasLeft(tag, x, durationMs);
@@ -627,9 +635,10 @@ public partial class InternalSortView : UserControl
 
         if (_currentAlgo == InternalSortAlgorithm.QuickHoare)
         {
-            PositionTag(_tagI, st.PointerI, 4);
-            PositionTag(_tagJ, st.PointerJ, st.PointerI == st.PointerJ ? 24 : 4);
-            PositionTag(_tagPivot, st.PivotIndex, (st.PivotIndex == st.PointerI || st.PivotIndex == st.PointerJ) ? 24 : 4);
+            // Соседние указатели могут смотреть на один столбец или на узкие соседние столбцы.
+            PositionTag(_tagI, "i", st.PointerI, 4);
+            PositionTag(_tagJ, "j", st.PointerJ, 24);
+            PositionTag(_tagPivot, "pivot", st.PivotIndex, 44);
             _tagKey.Visibility = Visibility.Collapsed;
         }
         else if (_currentAlgo == InternalSortAlgorithm.Insertion)
@@ -637,7 +646,7 @@ public partial class InternalSortView : UserControl
             _tagI.Visibility = Visibility.Collapsed;
             _tagJ.Visibility = Visibility.Collapsed;
             _tagPivot.Visibility = Visibility.Collapsed;
-            PositionTag(_tagKey, st.CurrentIndex, 4);
+            PositionTag(_tagKey, "ключ", st.CurrentIndex ?? st.InsertedIndex, 4);
         }
         else
         {
