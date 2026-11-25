@@ -52,10 +52,10 @@
                     <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="N:" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,4,0" />
                         <TextBox x:Name="TxtSizeInput" Text="10" Width="58" Height="30" HorizontalContentAlignment="Center"
-                                 AutomationProperties.Name="Количество элементов N" ToolTip="Введите N от 4 до 1000. Enter создаёт массив."
+                                 AutomationProperties.Name="Количество элементов N"
                                  TextChanged="TxtSizeInput_TextChanged" KeyDown="TxtSizeInput_KeyDown" />
                         <Slider x:Name="SldSize" Width="85" Value="10" AutomationProperties.Name="Количество элементов"
-                                IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="50" VerticalAlignment="Center"
+                                IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="5" VerticalAlignment="Center"
                                 ValueChanged="SldSize_ValueChanged" Margin="2,0,8,0" />
                         <CheckBox x:Name="ChkNegative" Content="±" ToolTip="Включать отрицательные числа"
                                   IsChecked="True" VerticalAlignment="Center" Margin="0,0,8,0" />
@@ -143,7 +143,7 @@
 
                             <!-- Дерево разделения и слияния для Merge Sort -->
                             <ScrollViewer x:Name="MergeScroll" Visibility="Collapsed"
-                                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                                 <Grid x:Name="MergeStage" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="4" />
                             </ScrollViewer>
 

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -14,8 +15,8 @@ namespace SortingLab4.App.Views;
 public partial class InternalSortView : UserControl
 {
     private const int MinGeneratedArraySize = 4;
-    private const int MaxArraySize = 1000;
-    private const int DetailedStepsLimit = 40;
+    private const int MaxArraySize = 50;
+    private const int ArrayChipsLimit = 40;
 
     private sealed class LogEntryVm
     {
@@ -39,7 +40,6 @@ public partial class InternalSortView : UserControl
 
     private InternalSortAlgorithm _currentAlgo = InternalSortAlgorithm.Bubble;
     private double[] _sourceArray = { 8, 3, -2, 11, 5, 3, 1, 9 };
-    private bool UsesDetailedSteps => _sourceArray.Length <= DetailedStepsLimit;
     private InternalSortResult? _currentResult;
     private int _stepIndex = -1;
     private bool _isPlaying;
@@ -84,6 +84,7 @@ public partial class InternalSortView : UserControl
         InitializeComponent();
         SldSize.Minimum = MinGeneratedArraySize;
         SldSize.Maximum = MaxArraySize;
+        TxtSizeInput.ToolTip = $"Введите N от {MinGeneratedArraySize} до {MaxArraySize}. Enter создаёт массив.";
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
         _timer.Tick += Timer_Tick;
         Loaded += (_, _) => ResetState(false);
@@ -135,7 +136,7 @@ public partial class InternalSortView : UserControl
     {
         if (_bars.Count == 0 || BarsCanvas.Visibility != Visibility.Visible) return;
         LayoutBars(animated: false);
-        if (UsesDetailedSteps && _currentResult is not null && _stepIndex >= 0 && _stepIndex < _currentResult.Steps.Count)
+        if (_currentResult is not null && _stepIndex >= 0 && _stepIndex < _currentResult.Steps.Count)
             UpdatePointers(_currentResult.Steps[_stepIndex], animated: false);
     }
 
@@ -241,10 +242,8 @@ public partial class InternalSortView : UserControl
         TxtStepBadge.Text = "Готово";
         BadgeStepBorder.Background = BrushFromHex("#DBEAFE");
         TxtStepBadge.Foreground = BrushFromHex("#1D4ED8");
-        TxtStepCounter.Text = UsesDetailedSteps ? "Шаг 0 / 0" : "Этап 0 / 0";
-        TxtExplanation.Text = UsesDetailedSteps
-            ? "Нажмите «Запуск» для автоматического показа или «Следующий шаг» для пошагового разбора."
-            : "Для больших массивов показываются основные этапы сортировки.";
+        TxtStepCounter.Text = "Шаг 0 / 0";
+        TxtExplanation.Text = "Нажмите «Запуск» для автоматического показа или «Следующий шаг» для пошагового разбора.";
         TxtStats.Text = "Сравнений: 0  |  Перестановок: 0";
         TxtAuxInfo.Text = string.Empty;
 
@@ -259,7 +258,7 @@ public partial class InternalSortView : UserControl
     private void RenderInitialVisualization()
     {
         RenderLegendAndHeader();
-        bool showMergeTree = _currentAlgo == InternalSortAlgorithm.Merge && UsesDetailedSteps;
+        bool showMergeTree = _currentAlgo == InternalSortAlgorithm.Merge;
         BarsCanvas.Visibility = (!showMergeTree && _sourceArray.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
         MergeScroll.Visibility = (showMergeTree && _sourceArray.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
         TxtEmptyStage.Visibility = _sourceArray.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -278,7 +277,7 @@ public partial class InternalSortView : UserControl
         _sourceArray = parsed;
         _logsByAlgo[_currentAlgo].Clear();
 
-        _currentResult = InternalSortingAlgorithms.Run(_currentAlgo, _sourceArray, detailedSteps: UsesDetailedSteps);
+        _currentResult = InternalSortingAlgorithms.Run(_currentAlgo, _sourceArray);
         var st = _currentResult.Stats;
         TxtStats.Text = _currentAlgo == InternalSortAlgorithm.Merge
             ? $"Сравнений: {st.Comparisons}  |  Разделений: {st.Splits}  |  Слияний: {st.Merges}"
@@ -395,18 +394,15 @@ public partial class InternalSortView : UserControl
             var brush = new SolidColorBrush(ColDefault);
             var valTxt = new TextBlock
             {
-                Text = UsesDetailedSteps ? InternalSortingAlgorithms.FormatNumber(arr[idx]) : string.Empty,
+                Text = InternalSortingAlgorithms.FormatNumber(arr[idx]),
                 Foreground = Brushes.White,
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Visibility = UsesDetailedSteps ? Visibility.Visible : Visibility.Collapsed
+                HorizontalAlignment = HorizontalAlignment.Center
             };
             var rect = new Border
             {
                 Background = brush,
-                CornerRadius = UsesDetailedSteps ? new CornerRadius(5, 5, 2, 2) : new CornerRadius(0),
-                Padding = UsesDetailedSteps ? new Thickness(2, 5, 2, 2) : new Thickness(0),
                 Child = valTxt
             };
             var idxTxt = new TextBlock
@@ -415,8 +411,7 @@ public partial class InternalSortView : UserControl
                 FontSize = 11,
                 Foreground = BrushFromHex("#64748B"),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 4, 0, 0),
-                Visibility = UsesDetailedSteps ? Visibility.Visible : Visibility.Collapsed
+                Margin = new Thickness(0, 4, 0, 0)
             };
 
             var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
@@ -452,40 +447,36 @@ public partial class InternalSortView : UserControl
     private void ComputeBarMetrics()
     {
         int n = _bars.Count;
-        double canvasW = BarsCanvas.ActualWidth > 100 ? BarsCanvas.ActualWidth : 680;
-        double maxStep = Math.Min(60, (canvasW - 24) / Math.Max(1, n));
-        if (!UsesDetailedSteps)
-        {
-            _colStep = maxStep;
-            _colWidth = maxStep * 0.9;
-            _startX = 12;
-            return;
-        }
-        _colStep = Math.Max(30, maxStep);
-        _colWidth = Math.Max(22, _colStep - 8);
-        double totalW = n * _colStep - 8;
-        _startX = Math.Max(12, (canvasW - totalW) / 2.0);
+        double canvasW = BarsCanvas.ActualWidth > 0 ? BarsCanvas.ActualWidth : 680;
+        _colStep = Math.Min(60, Math.Max(1, canvasW - 24) / n);
+        _colWidth = _colStep - Math.Min(8, _colStep * 0.2);
+        double totalW = (n - 1) * _colStep + _colWidth;
+        _startX = (canvasW - totalW) / 2.0;
     }
 
     private double ComputeBarHeight(double val)
     {
-        double canvasH = BarsCanvas.ActualHeight > 120 ? BarsCanvas.ActualHeight : 280;
-        double maxBarH = Math.Max(100, canvasH - 68);
-        double minBarH = 30;
+        double canvasH = BarsCanvas.ActualHeight > 0 ? BarsCanvas.ActualHeight : 280;
+        double maxBarH = Math.Max(1, canvasH - 68);
+        double minBarH = Math.Min(30, maxBarH);
         double norm = (val - _barMin) / _barSpan;
         return minBarH + norm * (maxBarH - minBarH);
     }
 
     private double ComputeBarTop(double barHeight)
     {
-        double canvasH = BarsCanvas.ActualHeight > 120 ? BarsCanvas.ActualHeight : 280;
-        return Math.Max(28, canvasH - barHeight - 24);
+        double canvasH = BarsCanvas.ActualHeight > 0 ? BarsCanvas.ActualHeight : 280;
+        return Math.Max(0, canvasH - barHeight - 24);
     }
 
     private void LayoutBars(bool animated, int durationMs = 220)
     {
         if (_bars.Count == 0) return;
         ComputeBarMetrics();
+        bool showLabels = _colWidth >= 24;
+        var labelVisibility = showLabels ? Visibility.Visible : Visibility.Collapsed;
+        var cornerRadius = showLabels ? new CornerRadius(5, 5, 2, 2) : new CornerRadius(2);
+        var padding = showLabels ? new Thickness(2, 5, 2, 2) : new Thickness(0);
 
         for (int i = 0; i < _bars.Count; i++)
         {
@@ -496,7 +487,12 @@ public partial class InternalSortView : UserControl
 
             b.Root.Width = _colWidth;
             b.BarRect.Height = h;
-            if (UsesDetailedSteps) b.IndexText.Text = (i + 1).ToString();
+            b.BarRect.CornerRadius = cornerRadius;
+            b.BarRect.Padding = padding;
+            b.ValueText.Visibility = labelVisibility;
+            b.IndexText.Visibility = labelVisibility;
+            b.IndexText.Text = (i + 1).ToString();
+            b.Root.ToolTip = $"Позиция {i + 1}, значение {b.ValueText.Text}";
 
             Canvas.SetTop(b.Root, y);
             if (animated)
@@ -516,7 +512,7 @@ public partial class InternalSortView : UserControl
             BuildInitialBars(st.ArraySnapshot);
         }
 
-        int animMs = Math.Clamp((int)(SldSpeed.Value * 0.65), 110, 280);
+        int animMs = StepAnimationDuration();
 
         // 1. Обработка физических перемещений столбцов (swap / shift / insert)
         if (st.OperationType == "swap" && st.SwappingIndices.Count == 2)
@@ -542,14 +538,14 @@ public partial class InternalSortView : UserControl
         for (int i = 0; i < _bars.Count; i++)
         {
             double expected = st.ArraySnapshot[i];
-            if (Math.Abs(_bars[i].Value - expected) > 1e-9)
+            if (_bars[i].Value != expected)
             {
                 _bars[i].Value = expected;
-                if (UsesDetailedSteps) _bars[i].ValueText.Text = InternalSortingAlgorithms.FormatNumber(expected);
+                _bars[i].ValueText.Text = InternalSortingAlgorithms.FormatNumber(expected);
             }
         }
 
-        LayoutBars(animated: UsesDetailedSteps, durationMs: animMs);
+        LayoutBars(animated: true, durationMs: animMs);
 
         // 2. Плавное обновление цветов, прозрачности и приподнятия столбцов
         var comparing = new HashSet<int>(st.ComparingIndices);
@@ -594,21 +590,15 @@ public partial class InternalSortView : UserControl
                 targetLiftY = -10;
             }
 
-            if (UsesDetailedSteps)
-            {
-                UiAnimations.AnimateBrushColor(bar.FillBrush, targetColor, Math.Min(animMs, 180));
-                UiAnimations.AnimateOpacity(bar.Root, targetOpacity, Math.Min(animMs, 180));
-                UiAnimations.AnimateOffsetY(bar.Root, targetLiftY, Math.Min(animMs, 200));
-            }
-            else
-            {
-                bar.FillBrush.Color = targetColor;
-                bar.Root.Opacity = targetOpacity;
-            }
+            UiAnimations.AnimateBrushColor(bar.FillBrush, targetColor, Math.Min(animMs, 180));
+            UiAnimations.AnimateOpacity(bar.Root, targetOpacity, Math.Min(animMs, 180));
+            UiAnimations.AnimateOffsetY(bar.Root, targetLiftY, Math.Min(animMs, 200));
         }
 
-        if (UsesDetailedSteps) UpdatePointers(st, animated: true, durationMs: animMs);
+        UpdatePointers(st, animated: true, durationMs: animMs);
     }
+
+    private int StepAnimationDuration() => Math.Clamp((int)(SldSpeed.Value * 0.65), 60, 280);
 
     private void UpdatePointers(InternalSortStep st, bool animated, int durationMs = 200)
     {
@@ -675,6 +665,7 @@ public partial class InternalSortView : UserControl
                 Values = new List<double>(_sourceArray), State = "active"
             }, isCurrent: true));
             MergeStage.Children.Add(outer);
+            MergeScroll.ScrollToTop();
             return;
         }
 
@@ -691,6 +682,7 @@ public partial class InternalSortView : UserControl
             if (nd.Depth > maxDepth) maxDepth = nd.Depth;
         }
 
+        FrameworkElement? highlighted = null;
         for (int d = 0; d <= maxDepth; d++)
         {
             if (!levels.TryGetValue(d, out var levelNodes)) continue;
@@ -699,8 +691,9 @@ public partial class InternalSortView : UserControl
             {
                 bool isCur = nd.Id == st.ActiveNodeId;
                 var card = MakeMergeNodeCard(nd, isCur);
+                if (isCur) highlighted = card;
                 if (st.OperationType == "split" && nd.ParentId == st.ActiveNodeId)
-                    UiAnimations.FadeIn(card, durationMs: 200);
+                    UiAnimations.FadeIn(card, durationMs: StepAnimationDuration());
                 levelRow.Children.Add(card);
             }
             outer.Children.Add(levelRow);
@@ -728,19 +721,25 @@ public partial class InternalSortView : UserControl
                 Margin = new Thickness(0, 0, 0, 6)
             });
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            var row = new UniformGrid { Rows = 1, Columns = 3 };
             row.Children.Add(MakeMergePartPanel("Левая", mc.LeftValues, mc.LeftPtr, mc.ComparingLeft, false));
-            row.Children.Add(new TextBlock { Text = " + ", FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 12, 6, 0) });
             row.Children.Add(MakeMergePartPanel("Правая", mc.RightValues, mc.RightPtr, mc.ComparingRight, false));
-            row.Children.Add(new TextBlock { Text = " -> ", FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 12, 6, 0) });
             row.Children.Add(MakeMergePartPanel("Результат", mc.ResultValues, 0, null, true));
 
             mergeStack.Children.Add(row);
             mergeBox.Child = mergeStack;
-            outer.Children.Add(mergeBox);
+            outer.Children.Insert(0, mergeBox);
+            highlighted = mergeBox;
         }
 
         MergeStage.Children.Add(outer);
+        if (highlighted is not null)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (highlighted.IsLoaded && highlighted.IsVisible) highlighted.BringIntoView();
+            }, DispatcherPriority.Loaded);
+        }
     }
 
     private void RenderLegendAndHeader()
@@ -754,9 +753,6 @@ public partial class InternalSortView : UserControl
             InternalSortAlgorithm.Insertion => (
                 "Insertion Sort (Сортировка вставками)", "Insertion Sort",
                 new[] { ("#22C55E", "Отсортированная часть"), ("#7C3AED", "Ключ"), ("#F59E0B", "Сравнение"), ("#0EA5E9", "Сдвиг"), ("#94A3B8", "Остальные") }),
-            InternalSortAlgorithm.Merge when !UsesDetailedSteps => (
-                "Merge Sort (Сортировка слиянием)", "Merge Sort",
-                new[] { ("#94A3B8", "Текущие значения"), ("#22C55E", "Отсортировано") }),
             InternalSortAlgorithm.Merge => (
                 "Merge Sort (Дерево разделения и слияния)", "Merge Sort",
                 new[] { ("#2563EB", "Активный"), ("#0D9488", "Одно число"), ("#D97706", "Слияние"), ("#16A34A", "Готово") }),
@@ -799,8 +795,7 @@ public partial class InternalSortView : UserControl
         BadgeStepBorder.Background = BrushFromHex(badgeBg);
         TxtStepBadge.Foreground = BrushFromHex(badgeFg);
 
-        string stepLabel = UsesDetailedSteps ? "Шаг" : "Этап";
-        TxtStepCounter.Text = $"{stepLabel} {st.StepNumber} / {_currentResult.Steps.Count}";
+        TxtStepCounter.Text = $"Шаг {st.StepNumber} / {_currentResult.Steps.Count}";
         TxtExplanation.Text = st.Explanation;
 
         if (_currentAlgo == InternalSortAlgorithm.Insertion && st.KeyValue.HasValue)
@@ -813,7 +808,7 @@ public partial class InternalSortView : UserControl
         else
             TxtAuxInfo.Text = string.Empty;
 
-        if (_currentAlgo == InternalSortAlgorithm.Merge && UsesDetailedSteps)
+        if (_currentAlgo == InternalSortAlgorithm.Merge)
             RenderMergeTree(st);
         else
             AnimateBarsForStep(st);
@@ -828,7 +823,7 @@ public partial class InternalSortView : UserControl
             var entry = _currentResult.Steps[logCol.Count];
             logCol.Add(new LogEntryVm
             {
-                StepHeader = $"{stepLabel} {entry.StepNumber}",
+                StepHeader = $"Шаг {entry.StepNumber}",
                 TypeLabel = entry.OperationLabel,
                 Explanation = entry.Explanation
             });
@@ -929,7 +924,7 @@ public partial class InternalSortView : UserControl
 
     private static void RenderArray(Panel panel, double[] arr, bool isDone)
     {
-        if (arr.Length > DetailedStepsLimit)
+        if (arr.Length > ArrayChipsLimit)
         {
             var field = panel.Children.Count == 1 ? panel.Children[0] as TextBox : null;
             if (field is null)
