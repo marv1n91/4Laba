@@ -16,20 +16,27 @@ public static class InternalSortingAlgorithms
         return value.ToString("0.###", CultureInfo.InvariantCulture);
     }
 
-    public static InternalSortResult Run(InternalSortAlgorithm algorithm, IReadOnlyList<double> input)
+    public static InternalSortResult Run(InternalSortAlgorithm algorithm, IReadOnlyList<double> input, bool detailedSteps = true)
     {
         return algorithm switch
         {
-            InternalSortAlgorithm.Bubble => BubbleSort(input),
-            InternalSortAlgorithm.Insertion => InsertionSort(input),
-            InternalSortAlgorithm.Merge => MergeSort(input),
-            InternalSortAlgorithm.QuickHoare => QuickSortHoare(input),
+            InternalSortAlgorithm.Bubble => BubbleSort(input, detailedSteps),
+            InternalSortAlgorithm.Insertion => InsertionSort(input, detailedSteps),
+            InternalSortAlgorithm.Merge => MergeSort(input, detailedSteps),
+            InternalSortAlgorithm.QuickHoare => QuickSortHoare(input, detailedSteps),
             _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, "Неизвестный алгоритм сортировки.")
         };
     }
 
+    private static bool ShowMilestone(bool detailedSteps, int elementCount, int milestone)
+    {
+        const int targetMilestones = 80;
+        int interval = Math.Max(1, (int)Math.Ceiling((double)elementCount / targetMilestones));
+        return detailedSteps || (milestone - 1) % interval == 0;
+    }
+
     // 1. Bubble Sort (сортировка пузырьком)
-    public static InternalSortResult BubbleSort(IReadOnlyList<double> input)
+    public static InternalSortResult BubbleSort(IReadOnlyList<double> input, bool detailedSteps = true)
     {
         var arr = new double[input.Count];
         for (int k = 0; k < input.Count; k++) arr[k] = input[k];
@@ -84,7 +91,7 @@ public static class InternalSortingAlgorithms
 
                     if (leftVal > rightVal)
                     {
-                        AddStep("compare", "Сравнение",
+                        if (detailedSteps) AddStep("compare", "Сравнение",
                             $"Проход {passNum}: сравниваем соседние числа {FormatNumber(leftVal)} и {FormatNumber(rightVal)}. " +
                             $"{FormatNumber(leftVal)} больше {FormatNumber(rightVal)}, поэтому поменяем их местами.",
                             comparing: new List<int> { j, j + 1 }, passNum: passNum);
@@ -93,11 +100,11 @@ public static class InternalSortingAlgorithms
                         stats.Swaps++;
                         swappedInPass = true;
 
-                        AddStep("swap", "Перестановка",
+                        if (detailedSteps) AddStep("swap", "Перестановка",
                             $"Поменяли местами {FormatNumber(leftVal)} и {FormatNumber(rightVal)}. Большее число {FormatNumber(leftVal)} сдвинулось вправо.",
                             swapping: new List<int> { j, j + 1 }, passNum: passNum);
                     }
-                    else
+                    else if (detailedSteps)
                     {
                         AddStep("compare", "Сравнение",
                             $"Проход {passNum}: сравниваем соседние числа {FormatNumber(leftVal)} и {FormatNumber(rightVal)}. " +
@@ -108,7 +115,7 @@ public static class InternalSortingAlgorithms
 
                 int placedIdx = n - 1 - i;
                 sortedIndices.Add(placedIdx);
-                AddStep("pass_end", "Конец прохода",
+                if (ShowMilestone(detailedSteps, n, passNum)) AddStep("pass_end", "Конец прохода",
                     $"Проход {passNum} закончен. Число {FormatNumber(arr[placedIdx])} встало на свое место в конце массива.",
                     passNum: passNum);
 
@@ -151,7 +158,7 @@ public static class InternalSortingAlgorithms
     }
 
     // 2. Insertion Sort (сортировка простыми вставками)
-    public static InternalSortResult InsertionSort(IReadOnlyList<double> input)
+    public static InternalSortResult InsertionSort(IReadOnlyList<double> input, bool detailedSteps = true)
     {
         var arr = new double[input.Count];
         for (int k = 0; k < input.Count; k++) arr[k] = input[k];
@@ -199,7 +206,7 @@ public static class InternalSortingAlgorithms
             for (int i = 1; i < n; i++)
             {
                 double key = arr[i];
-                AddStep("select", "Выбор числа",
+                if (detailedSteps) AddStep("select", "Выбор числа",
                     $"Берем число {FormatNumber(key)} (позиция {i + 1}) и ищем для него место среди уже отсортированных чисел слева.",
                     sortedEnd: i, currentIdx: i, keyVal: key);
 
@@ -209,21 +216,21 @@ public static class InternalSortingAlgorithms
                     stats.Comparisons++;
                     if (arr[j] > key)
                     {
-                        AddStep("compare", "Сравнение",
+                        if (detailedSteps) AddStep("compare", "Сравнение",
                             $"Сравниваем {FormatNumber(key)} и {FormatNumber(arr[j])}. Число {FormatNumber(arr[j])} больше, поэтому сдвинем его вправо.",
                             sortedEnd: i, currentIdx: j + 1, keyVal: key, comparing: new List<int> { j });
 
                         arr[j + 1] = arr[j];
                         stats.Shifts++;
 
-                        AddStep("shift", "Сдвиг вправо",
+                        if (detailedSteps) AddStep("shift", "Сдвиг вправо",
                             $"Сдвинули {FormatNumber(arr[j])} на одну позицию вправо, освобождая место для {FormatNumber(key)}.",
                             sortedEnd: i, currentIdx: j, keyVal: key, shiftedIdx: j + 1);
                         j--;
                     }
                     else
                     {
-                        AddStep("compare", "Сравнение",
+                        if (detailedSteps) AddStep("compare", "Сравнение",
                             $"Сравниваем {FormatNumber(key)} и {FormatNumber(arr[j])}. Число {FormatNumber(arr[j])} не больше {FormatNumber(key)}, значит место найдено.",
                             sortedEnd: i, currentIdx: j + 1, keyVal: key, comparing: new List<int> { j });
                         break;
@@ -231,7 +238,7 @@ public static class InternalSortingAlgorithms
                 }
 
                 arr[j + 1] = key;
-                AddStep("insert", "Вставка",
+                if (ShowMilestone(detailedSteps, n, i)) AddStep("insert", "Вставка",
                     $"Вставляем {FormatNumber(key)} на позицию {j + 2}. Теперь в отсортированной части {i + 1} чисел.",
                     sortedEnd: i + 1, keyVal: key, insertedIdx: j + 1);
             }
@@ -256,7 +263,7 @@ public static class InternalSortingAlgorithms
     }
 
     // 3. Merge Sort (сортировка слиянием с деревом разделения и слияния)
-    public static InternalSortResult MergeSort(IReadOnlyList<double> input)
+    public static InternalSortResult MergeSort(IReadOnlyList<double> input, bool detailedSteps = true)
     {
         var arr = new double[input.Count];
         for (int k = 0; k < input.Count; k++) arr[k] = input[k];
@@ -300,7 +307,7 @@ public static class InternalSortingAlgorithms
                 Explanation = explanation,
                 ArraySnapshot = (double[])arr.Clone(),
                 ActiveNodeId = activeNodeId,
-                TreeNodes = SnapshotNodes(),
+                TreeNodes = detailedSteps ? SnapshotNodes() : null,
                 MergeContext = mergeCtx
             });
         }
@@ -331,7 +338,7 @@ public static class InternalSortingAlgorithms
                     if (node.Values.Count <= 1)
                     {
                         node.State = "single";
-                        AddStep("single", "Одно число",
+                        if (detailedSteps) AddStep("single", "Одно число",
                             $"Подмассив [{FormatNumber(node.Values[0])}] состоит из одного числа. Дальше делить нечего, он уже отсортирован.",
                             node.Id);
                         return new List<double>(node.Values);
@@ -346,7 +353,7 @@ public static class InternalSortingAlgorithms
                     var leftNode = CreateNode(node.Id, "left", node.Depth + 1, node.LeftIndex, node.LeftIndex + mid - 1, leftVals, "active");
                     var rightNode = CreateNode(node.Id, "right", node.Depth + 1, node.LeftIndex + mid, node.RightIndex, rightVals, "active");
 
-                    AddStep("split", "Разделение",
+                    if (detailedSteps) AddStep("split", "Разделение",
                         $"Делим подмассив на две части: левая [{JoinVals(leftVals)}] и правая [{JoinVals(rightVals)}].",
                         node.Id);
 
@@ -358,7 +365,7 @@ public static class InternalSortingAlgorithms
                     var merged = new List<double>(sortedLeft.Count + sortedRight.Count);
                     int i = 0, j = 0;
 
-                    AddStep("merge_start", "Слияние",
+                    if (detailedSteps) AddStep("merge_start", "Слияние",
                         $"Соединяем две отсортированные части: [{JoinVals(sortedLeft)}] и [{JoinVals(sortedRight)}]. Сравниваем первые числа и берем меньшее.",
                         node.Id,
                         new MergeContext
@@ -377,7 +384,7 @@ public static class InternalSortingAlgorithms
                         double lv = sortedLeft[i];
                         double rv = sortedRight[j];
 
-                        AddStep("merge_compare", "Сравнение",
+                        if (detailedSteps) AddStep("merge_compare", "Сравнение",
                             $"Сравниваем {FormatNumber(lv)} (слева) и {FormatNumber(rv)} (справа). " +
                             (lv <= rv
                                 ? $"Меньше или равно {FormatNumber(lv)}, берем его."
@@ -409,6 +416,7 @@ public static class InternalSortingAlgorithms
 
                         merged.Add(chosen);
                         arr[node.LeftIndex + merged.Count - 1] = chosen;
+                        if (!detailedSteps) continue;
 
                         var updatedNodeVals = new List<double>(merged);
                         for (int a = i; a < sortedLeft.Count; a++) updatedNodeVals.Add(sortedLeft[a]);
@@ -434,6 +442,7 @@ public static class InternalSortingAlgorithms
                         double chosen = sortedLeft[i++];
                         merged.Add(chosen);
                         arr[node.LeftIndex + merged.Count - 1] = chosen;
+                        if (!detailedSteps) continue;
                         var updatedNodeVals = new List<double>(merged);
                         for (int a = i; a < sortedLeft.Count; a++) updatedNodeVals.Add(sortedLeft[a]);
                         node.Values = updatedNodeVals;
@@ -457,6 +466,7 @@ public static class InternalSortingAlgorithms
                         double chosen = sortedRight[j++];
                         merged.Add(chosen);
                         arr[node.LeftIndex + merged.Count - 1] = chosen;
+                        if (!detailedSteps) continue;
                         var updatedNodeVals = new List<double>(merged);
                         for (int b = j; b < sortedRight.Count; b++) updatedNodeVals.Add(sortedRight[b]);
                         node.Values = updatedNodeVals;
@@ -477,9 +487,12 @@ public static class InternalSortingAlgorithms
 
                     node.Values = new List<double>(merged);
                     node.State = "merged";
-                    AddStep("merge_end", "Слияние готово",
-                        $"Подмассив собран и отсортирован: [{JoinVals(merged)}].",
-                        node.Id);
+                    if (ShowMilestone(detailedSteps, n, stats.Merges))
+                    {
+                        AddStep("merge_end", "Слияние готово", detailedSteps
+                            ? $"Подмассив собран и отсортирован: [{JoinVals(merged)}]."
+                            : $"Слит участок с позиции {node.LeftIndex + 1} по {node.RightIndex + 1}.", node.Id);
+                    }
                     return merged;
                 }
 
@@ -506,7 +519,7 @@ public static class InternalSortingAlgorithms
     }
 
     // 4. Quick Sort Hoare (быстрая сортировка Хоара)
-    public static InternalSortResult QuickSortHoare(IReadOnlyList<double> input)
+    public static InternalSortResult QuickSortHoare(IReadOnlyList<double> input, bool detailedSteps = true)
     {
         var arr = new double[input.Count];
         for (int k = 0; k < input.Count; k++) arr[k] = input[k];
@@ -572,7 +585,7 @@ public static class InternalSortingAlgorithms
                 int i = left;
                 int j = right;
 
-                AddStep("pivot", "Опорное число",
+                if (detailedSteps) AddStep("pivot", "Опорное число",
                     $"Берем участок с позиции {left + 1} по {right + 1}. Опорное число: {FormatNumber(pivotVal)}. " +
                     $"Ставим указатель i на позицию {i + 1}, а j на позицию {j + 1}.",
                     rangeLeft: left, rangeRight: right, pivotVal: pivotVal, pivotIdx: pivotIdx, ptrI: i, ptrJ: j);
@@ -582,7 +595,7 @@ public static class InternalSortingAlgorithms
                     while (arr[i] < pivotVal)
                     {
                         stats.Comparisons++;
-                        AddStep("compare", "Проверка i",
+                        if (detailedSteps) AddStep("compare", "Проверка i",
                             $"Указатель i смотрит на {FormatNumber(arr[i])}: оно меньше опорного {FormatNumber(pivotVal)}, сдвигаем i вправо.",
                             rangeLeft: left, rangeRight: right, pivotVal: pivotVal, pivotIdx: pivotIdx, ptrI: i, ptrJ: j,
                             comparing: new List<int> { i });
@@ -590,7 +603,7 @@ public static class InternalSortingAlgorithms
                     }
 
                     stats.Comparisons++;
-                    AddStep("pointer", "Стоп i",
+                    if (detailedSteps) AddStep("pointer", "Стоп i",
                         $"Указатель i остановился на {FormatNumber(arr[i])} (оно >= {FormatNumber(pivotVal)}).",
                         rangeLeft: left, rangeRight: right, pivotVal: pivotVal, pivotIdx: pivotIdx, ptrI: i, ptrJ: j,
                         comparing: new List<int> { i });
@@ -598,7 +611,7 @@ public static class InternalSortingAlgorithms
                     while (arr[j] > pivotVal)
                     {
                         stats.Comparisons++;
-                        AddStep("compare", "Проверка j",
+                        if (detailedSteps) AddStep("compare", "Проверка j",
                             $"Указатель j смотрит на {FormatNumber(arr[j])}: оно больше опорного {FormatNumber(pivotVal)}, сдвигаем j влево.",
                             rangeLeft: left, rangeRight: right, pivotVal: pivotVal, pivotIdx: pivotIdx, ptrI: i, ptrJ: j,
                             comparing: new List<int> { j });
@@ -606,7 +619,7 @@ public static class InternalSortingAlgorithms
                     }
 
                     stats.Comparisons++;
-                    AddStep("pointer", "Стоп j",
+                    if (detailedSteps) AddStep("pointer", "Стоп j",
                         $"Указатель j остановился на {FormatNumber(arr[j])} (оно <= {FormatNumber(pivotVal)}).",
                         rangeLeft: left, rangeRight: right, pivotVal: pivotVal, pivotIdx: pivotIdx, ptrI: i, ptrJ: j,
                         comparing: new List<int> { j });
@@ -622,12 +635,12 @@ public static class InternalSortingAlgorithms
                             if (pivotIdx == i) pivotIdx = j;
                             else if (pivotIdx == j) pivotIdx = i;
 
-                            AddStep("swap", "Перестановка",
+                            if (detailedSteps) AddStep("swap", "Перестановка",
                                 $"Меняем местами {FormatNumber(vi)} и {FormatNumber(vj)}, чтобы меньшее число ушло влево, а большее вправо.",
                                 rangeLeft: left, rangeRight: right, pivotVal: pivotVal, pivotIdx: pivotIdx, ptrI: i, ptrJ: j,
                                 swapping: new List<int> { i, j });
                         }
-                        else
+                        else if (detailedSteps)
                         {
                             AddStep("pointer", "Встреча i и j",
                                 $"Указатели встретились на позиции {i + 1} (число {FormatNumber(arr[i])}). Двигаем их дальше.",
@@ -645,7 +658,7 @@ public static class InternalSortingAlgorithms
                 for (int p = i; p <= right; p++) rightPart.Add(p);
                 for (int mid = j + 1; mid < i; mid++) sortedSet.Add(mid);
 
-                AddStep("partition_end", "Разделение готово",
+                if (ShowMilestone(detailedSteps, n, stats.Splits)) AddStep("partition_end", "Разделение готово",
                     $"Разделили участок вокруг {FormatNumber(pivotVal)}: слева числа <= {FormatNumber(pivotVal)}, справа >= {FormatNumber(pivotVal)}. " +
                     "Теперь сортируем левую и правую части отдельно.",
                     rangeLeft: left, rangeRight: right, pivotVal: pivotVal, pivotIdx: pivotIdx,

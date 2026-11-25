@@ -51,9 +51,11 @@
                     <!-- Генератор случайного массива -->
                     <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="N:" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,4,0" />
-                        <TextBlock x:Name="TxtSizeVal" Text="10" FontSize="12.5" FontWeight="Bold" Width="20" VerticalAlignment="Center" />
-                        <Slider x:Name="SldSize" Width="85" Minimum="4" Maximum="20" Value="10"
-                                IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center"
+                        <TextBox x:Name="TxtSizeInput" Text="10" Width="58" Height="30" HorizontalContentAlignment="Center"
+                                 AutomationProperties.Name="Количество элементов N" ToolTip="Введите N от 4 до 1000. Enter создаёт массив."
+                                 TextChanged="TxtSizeInput_TextChanged" KeyDown="TxtSizeInput_KeyDown" />
+                        <Slider x:Name="SldSize" Width="85" Value="10" AutomationProperties.Name="Количество элементов"
+                                IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="50" VerticalAlignment="Center"
                                 ValueChanged="SldSize_ValueChanged" Margin="2,0,8,0" />
                         <CheckBox x:Name="ChkNegative" Content="±" ToolTip="Включать отрицательные числа"
                                   IsChecked="True" VerticalAlignment="Center" Margin="0,0,8,0" />
@@ -137,7 +139,7 @@
                     <Border Grid.Row="2" Background="#FAFBFD" BorderBrush="#E5E9F0" BorderThickness="1" CornerRadius="7" Padding="10">
                         <Grid>
                             <!-- Постоянный Canvas для плавных анимаций столбцов (Bubble / Insertion / Quick) -->
-                            <Canvas x:Name="BarsCanvas" ClipToBounds="False" SizeChanged="BarsCanvas_SizeChanged" />
+                            <Canvas x:Name="BarsCanvas" ClipToBounds="True" SizeChanged="BarsCanvas_SizeChanged" />
 
                             <!-- Дерево разделения и слияния для Merge Sort -->
                             <ScrollViewer x:Name="MergeScroll" Visibility="Collapsed"
@@ -154,13 +156,13 @@
                     <StackPanel Grid.Row="3" Margin="0,10,0,0">
                         <DockPanel Margin="0,0,0,4">
                             <TextBlock Text="Текущий:" Width="74" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
-                            <WrapPanel x:Name="CurrentArrayPanel" />
+                            <Grid x:Name="CurrentArrayPanel" />
                         </DockPanel>
                         <DockPanel>
                             <TextBlock Text="Итоговый:" Width="74" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
-                            <WrapPanel x:Name="FinalArrayPanel">
+                            <Grid x:Name="FinalArrayPanel">
                                 <TextBlock Text="после завершения сортировки" FontSize="12.5" Foreground="{StaticResource TextMutedBrush}" />
-                            </WrapPanel>
+                            </Grid>
                         </DockPanel>
                     </StackPanel>
                 </Grid>

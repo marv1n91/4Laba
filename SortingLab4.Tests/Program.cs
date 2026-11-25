@@ -150,6 +150,23 @@ RunTest("Случайные массивы (согласованность вс�
     }
 });
 
+RunTest("1000 элементов: сортировка с основными этапами", () =>
+{
+    double[] input = Enumerable.Range(1, 1000).Reverse().Select(value => (double)value).ToArray();
+    double[] expected = input.Reverse().ToArray();
+    foreach (var algo in allInternal)
+    {
+        var result = InternalSortingAlgorithms.Run(algo, input, detailedSteps: false);
+        Assert(ArraysEqual(result.SortedArray, expected), $"{algo}: неверный итог сортировки");
+        Assert(result.Steps.Count >= 3 && result.Steps.Count <= 82, $"{algo}: неверное число этапов");
+        Assert(ArraysEqual(result.Steps[0].ArraySnapshot, input), $"{algo}: неверный первый снимок");
+        Assert(result.Steps[^1].OperationType == "done" && ArraysEqual(result.Steps[^1].ArraySnapshot, expected),
+            $"{algo}: неверный последний снимок");
+        if (algo is InternalSortAlgorithm.Bubble or InternalSortAlgorithm.Insertion)
+            Assert(result.Stats.Comparisons == 499500, $"{algo}: пропущены сравнения");
+    }
+});
+
 RunTest("Merge Sort: дерево разделения и слияния", () =>
 {
     var res = InternalSortingAlgorithms.MergeSort(new double[] { 8, 3, 5, 1 });

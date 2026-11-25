@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using SortingLab4.App.Helpers;
@@ -12,6 +13,10 @@ namespace SortingLab4.App.Views;
 
 public partial class InternalSortView : UserControl
 {
+    private const int MinGeneratedArraySize = 4;
+    private const int MaxArraySize = 1000;
+    private const int DetailedStepsLimit = 40;
+
     private sealed class LogEntryVm
     {
         public string StepHeader { get; init; } = string.Empty;
@@ -34,6 +39,7 @@ public partial class InternalSortView : UserControl
 
     private InternalSortAlgorithm _currentAlgo = InternalSortAlgorithm.Bubble;
     private double[] _sourceArray = { 8, 3, -2, 11, 5, 3, 1, 9 };
+    private bool UsesDetailedSteps => _sourceArray.Length <= DetailedStepsLimit;
     private InternalSortResult? _currentResult;
     private int _stepIndex = -1;
     private bool _isPlaying;
@@ -76,6 +82,8 @@ public partial class InternalSortView : UserControl
     public InternalSortView()
     {
         InitializeComponent();
+        SldSize.Minimum = MinGeneratedArraySize;
+        SldSize.Maximum = MaxArraySize;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
         _timer.Tick += Timer_Tick;
         Loaded += (_, _) => ResetState(false);
@@ -94,7 +102,26 @@ public partial class InternalSortView : UserControl
 
     private void SldSize_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (TxtSizeVal is not null) TxtSizeVal.Text = ((int)SldSize.Value).ToString();
+        int size = (int)e.NewValue;
+        if (TxtSizeInput is not null && (!TryReadArraySize(out int typedSize) || typedSize != size))
+            TxtSizeInput.Text = size.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private bool TryReadArraySize(out int size) =>
+        int.TryParse(TxtSizeInput.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out size)
+        && size is >= MinGeneratedArraySize and <= MaxArraySize;
+
+    private void TxtSizeInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (SldSize is not null && TryReadArraySize(out int size))
+            SldSize.Value = size;
+    }
+
+    private void TxtSizeInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        GenerateRandomArray();
     }
 
     private void SldSpeed_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -106,9 +133,9 @@ public partial class InternalSortView : UserControl
 
     private void BarsCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (_currentAlgo == InternalSortAlgorithm.Merge || _bars.Count == 0) return;
+        if (_bars.Count == 0 || BarsCanvas.Visibility != Visibility.Visible) return;
         LayoutBars(animated: false);
-        if (_currentResult is not null && _stepIndex >= 0 && _stepIndex < _currentResult.Steps.Count)
+        if (UsesDetailedSteps && _currentResult is not null && _stepIndex >= 0 && _stepIndex < _currentResult.Steps.Count)
             UpdatePointers(_currentResult.Steps[_stepIndex], animated: false);
     }
 
@@ -135,10 +162,10 @@ public partial class InternalSortView : UserControl
             return true;
         }
 
-        string[] tokens = raw.Split(new[] { ' ', ',', ';', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-        if (tokens.Length > 40)
+        string[] tokens = raw.Split(new[] { ' ', ',', ';', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length > MaxArraySize)
         {
-            ShowError("Для наглядной визуализации введите не более 40 чисел.");
+            ShowError($"Введите не более {MaxArraySize} чисел.");
             parsed = Array.Empty<double>();
             return false;
         }
@@ -170,10 +197,18 @@ public partial class InternalSortView : UserControl
         }
     }
 
-    private void RandomArray_Click(object sender, RoutedEventArgs e)
+    private void RandomArray_Click(object sender, RoutedEventArgs e) => GenerateRandomArray();
+
+    private void GenerateRandomArray()
     {
+        if (!TryReadArraySize(out int size))
+        {
+            ShowError($"Введите целое N от {MinGeneratedArraySize} до {MaxArraySize}.");
+            TxtSizeInput.Focus();
+            return;
+        }
+
         ShowError(null);
-        int size = (int)SldSize.Value;
         bool allowNeg = ChkNegative.IsChecked == true;
         _sourceArray = new double[size];
         for (int i = 0; i < size; i++)
@@ -206,27 +241,33 @@ public partial class InternalSortView : UserControl
         TxtStepBadge.Text = "Готово";
         BadgeStepBorder.Background = BrushFromHex("#DBEAFE");
         TxtStepBadge.Foreground = BrushFromHex("#1D4ED8");
-        TxtStepCounter.Text = "Шаг 0 / 0";
-        TxtExplanation.Text = "Нажмите «Запуск» для автоматического показа или «Следующий шаг» для пошагового разбора.";
+        TxtStepCounter.Text = UsesDetailedSteps ? "Шаг 0 / 0" : "Этап 0 / 0";
+        TxtExplanation.Text = UsesDetailedSteps
+            ? "Нажмите «Запуск» для автоматического показа или «Следующий шаг» для пошагового разбора."
+            : "Для больших массивов показываются основные этапы сортировки.";
         TxtStats.Text = "Сравнений: 0  |  Перестановок: 0";
         TxtAuxInfo.Text = string.Empty;
 
-        RenderLegendAndHeader();
-        RenderArrayChips(CurrentArrayPanel, _sourceArray, false);
+        RenderArray(CurrentArrayPanel, _sourceArray, false);
         FinalArrayPanel.Children.Clear();
         FinalArrayPanel.Children.Add(new TextBlock { Text = "после завершения сортировки", FontSize = 12.5, Foreground = Brushes.SlateGray });
 
-        bool isMerge = _currentAlgo == InternalSortAlgorithm.Merge;
-        BarsCanvas.Visibility = (!isMerge && _sourceArray.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
-        MergeScroll.Visibility = (isMerge && _sourceArray.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
+        RenderInitialVisualization();
+        UpdateButtons();
+    }
+
+    private void RenderInitialVisualization()
+    {
+        RenderLegendAndHeader();
+        bool showMergeTree = _currentAlgo == InternalSortAlgorithm.Merge && UsesDetailedSteps;
+        BarsCanvas.Visibility = (!showMergeTree && _sourceArray.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
+        MergeScroll.Visibility = (showMergeTree && _sourceArray.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
         TxtEmptyStage.Visibility = _sourceArray.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        if (isMerge)
+        if (showMergeTree)
             RenderMergeTree(null);
         else
             BuildInitialBars(_sourceArray);
-
-        UpdateButtons();
     }
 
     private bool EnsureResultComputed()
@@ -235,15 +276,15 @@ public partial class InternalSortView : UserControl
         ShowError(null);
         if (!TryParseInputArray(out var parsed)) return false;
         _sourceArray = parsed;
+        _logsByAlgo[_currentAlgo].Clear();
 
-        _currentResult = InternalSortingAlgorithms.Run(_currentAlgo, _sourceArray);
+        _currentResult = InternalSortingAlgorithms.Run(_currentAlgo, _sourceArray, detailedSteps: UsesDetailedSteps);
         var st = _currentResult.Stats;
         TxtStats.Text = _currentAlgo == InternalSortAlgorithm.Merge
             ? $"Сравнений: {st.Comparisons}  |  Разделений: {st.Splits}  |  Слияний: {st.Merges}"
             : $"Сравнений: {st.Comparisons}  |  Перестановок/сдвигов: {st.Swaps + st.Shifts}";
 
-        if (_currentAlgo != InternalSortAlgorithm.Merge)
-            BuildInitialBars(_sourceArray);
+        RenderInitialVisualization();
         return true;
     }
 
@@ -354,17 +395,18 @@ public partial class InternalSortView : UserControl
             var brush = new SolidColorBrush(ColDefault);
             var valTxt = new TextBlock
             {
-                Text = InternalSortingAlgorithms.FormatNumber(arr[idx]),
+                Text = UsesDetailedSteps ? InternalSortingAlgorithms.FormatNumber(arr[idx]) : string.Empty,
                 Foreground = Brushes.White,
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Center
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Visibility = UsesDetailedSteps ? Visibility.Visible : Visibility.Collapsed
             };
             var rect = new Border
             {
                 Background = brush,
-                CornerRadius = new CornerRadius(5, 5, 2, 2),
-                Padding = new Thickness(2, 5, 2, 2),
+                CornerRadius = UsesDetailedSteps ? new CornerRadius(5, 5, 2, 2) : new CornerRadius(0),
+                Padding = UsesDetailedSteps ? new Thickness(2, 5, 2, 2) : new Thickness(0),
                 Child = valTxt
             };
             var idxTxt = new TextBlock
@@ -373,7 +415,8 @@ public partial class InternalSortView : UserControl
                 FontSize = 11,
                 Foreground = BrushFromHex("#64748B"),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 4, 0, 0)
+                Margin = new Thickness(0, 4, 0, 0),
+                Visibility = UsesDetailedSteps ? Visibility.Visible : Visibility.Collapsed
             };
 
             var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
@@ -411,6 +454,13 @@ public partial class InternalSortView : UserControl
         int n = _bars.Count;
         double canvasW = BarsCanvas.ActualWidth > 100 ? BarsCanvas.ActualWidth : 680;
         double maxStep = Math.Min(60, (canvasW - 24) / Math.Max(1, n));
+        if (!UsesDetailedSteps)
+        {
+            _colStep = maxStep;
+            _colWidth = maxStep * 0.9;
+            _startX = 12;
+            return;
+        }
         _colStep = Math.Max(30, maxStep);
         _colWidth = Math.Max(22, _colStep - 8);
         double totalW = n * _colStep - 8;
@@ -446,7 +496,7 @@ public partial class InternalSortView : UserControl
 
             b.Root.Width = _colWidth;
             b.BarRect.Height = h;
-            b.IndexText.Text = (i + 1).ToString();
+            if (UsesDetailedSteps) b.IndexText.Text = (i + 1).ToString();
 
             Canvas.SetTop(b.Root, y);
             if (animated)
@@ -495,11 +545,11 @@ public partial class InternalSortView : UserControl
             if (Math.Abs(_bars[i].Value - expected) > 1e-9)
             {
                 _bars[i].Value = expected;
-                _bars[i].ValueText.Text = InternalSortingAlgorithms.FormatNumber(expected);
+                if (UsesDetailedSteps) _bars[i].ValueText.Text = InternalSortingAlgorithms.FormatNumber(expected);
             }
         }
 
-        LayoutBars(animated: true, durationMs: animMs);
+        LayoutBars(animated: UsesDetailedSteps, durationMs: animMs);
 
         // 2. Плавное обновление цветов, прозрачности и приподнятия столбцов
         var comparing = new HashSet<int>(st.ComparingIndices);
@@ -521,7 +571,7 @@ public partial class InternalSortView : UserControl
                 else if (!sorted.Contains(idx)) targetOpacity = 0.32;
             }
 
-            if (sorted.Contains(idx)) targetColor = ColSorted;
+            if (sorted.Contains(idx) || st.OperationType == "done") targetColor = ColSorted;
             if (leftPart.Contains(idx)) targetColor = ColLeftPart;
             if (rightPart.Contains(idx)) targetColor = ColRightPart;
             if (_currentAlgo == InternalSortAlgorithm.QuickHoare && st.PivotIndex == idx) targetColor = ColKey;
@@ -544,12 +594,20 @@ public partial class InternalSortView : UserControl
                 targetLiftY = -10;
             }
 
-            UiAnimations.AnimateBrushColor(bar.FillBrush, targetColor, Math.Min(animMs, 180));
-            UiAnimations.AnimateOpacity(bar.Root, targetOpacity, Math.Min(animMs, 180));
-            UiAnimations.AnimateOffsetY(bar.Root, targetLiftY, Math.Min(animMs, 200));
+            if (UsesDetailedSteps)
+            {
+                UiAnimations.AnimateBrushColor(bar.FillBrush, targetColor, Math.Min(animMs, 180));
+                UiAnimations.AnimateOpacity(bar.Root, targetOpacity, Math.Min(animMs, 180));
+                UiAnimations.AnimateOffsetY(bar.Root, targetLiftY, Math.Min(animMs, 200));
+            }
+            else
+            {
+                bar.FillBrush.Color = targetColor;
+                bar.Root.Opacity = targetOpacity;
+            }
         }
 
-        UpdatePointers(st, animated: true, durationMs: animMs);
+        if (UsesDetailedSteps) UpdatePointers(st, animated: true, durationMs: animMs);
     }
 
     private void UpdatePointers(InternalSortStep st, bool animated, int durationMs = 200)
@@ -696,6 +754,9 @@ public partial class InternalSortView : UserControl
             InternalSortAlgorithm.Insertion => (
                 "Insertion Sort (Сортировка вставками)", "Insertion Sort",
                 new[] { ("#22C55E", "Отсортированная часть"), ("#7C3AED", "Ключ"), ("#F59E0B", "Сравнение"), ("#0EA5E9", "Сдвиг"), ("#94A3B8", "Остальные") }),
+            InternalSortAlgorithm.Merge when !UsesDetailedSteps => (
+                "Merge Sort (Сортировка слиянием)", "Merge Sort",
+                new[] { ("#94A3B8", "Текущие значения"), ("#22C55E", "Отсортировано") }),
             InternalSortAlgorithm.Merge => (
                 "Merge Sort (Дерево разделения и слияния)", "Merge Sort",
                 new[] { ("#2563EB", "Активный"), ("#0D9488", "Одно число"), ("#D97706", "Слияние"), ("#16A34A", "Готово") }),
@@ -738,7 +799,8 @@ public partial class InternalSortView : UserControl
         BadgeStepBorder.Background = BrushFromHex(badgeBg);
         TxtStepBadge.Foreground = BrushFromHex(badgeFg);
 
-        TxtStepCounter.Text = $"Шаг {st.StepNumber} / {_currentResult.Steps.Count}";
+        string stepLabel = UsesDetailedSteps ? "Шаг" : "Этап";
+        TxtStepCounter.Text = $"{stepLabel} {st.StepNumber} / {_currentResult.Steps.Count}";
         TxtExplanation.Text = st.Explanation;
 
         if (_currentAlgo == InternalSortAlgorithm.Insertion && st.KeyValue.HasValue)
@@ -751,14 +813,14 @@ public partial class InternalSortView : UserControl
         else
             TxtAuxInfo.Text = string.Empty;
 
-        if (_currentAlgo == InternalSortAlgorithm.Merge)
+        if (_currentAlgo == InternalSortAlgorithm.Merge && UsesDetailedSteps)
             RenderMergeTree(st);
         else
             AnimateBarsForStep(st);
 
-        RenderArrayChips(CurrentArrayPanel, st.ArraySnapshot, st.OperationType == "done");
+        RenderArray(CurrentArrayPanel, st.ArraySnapshot, st.OperationType == "done");
         if (st.OperationType == "done")
-            RenderArrayChips(FinalArrayPanel, _currentResult.SortedArray, true);
+            RenderArray(FinalArrayPanel, _currentResult.SortedArray, true);
 
         var logCol = _logsByAlgo[_currentAlgo];
         while (logCol.Count <= idx)
@@ -766,7 +828,7 @@ public partial class InternalSortView : UserControl
             var entry = _currentResult.Steps[logCol.Count];
             logCol.Add(new LogEntryVm
             {
-                StepHeader = $"Шаг {entry.StepNumber}",
+                StepHeader = $"{stepLabel} {entry.StepNumber}",
                 TypeLabel = entry.OperationLabel,
                 Explanation = entry.Explanation
             });
@@ -865,17 +927,32 @@ public partial class InternalSortView : UserControl
         return panel;
     }
 
-    private static void RenderArrayChips(WrapPanel panel, double[] arr, bool isDone)
+    private static void RenderArray(Panel panel, double[] arr, bool isDone)
     {
+        if (arr.Length > DetailedStepsLimit)
+        {
+            var field = panel.Children.Count == 1 ? panel.Children[0] as TextBox : null;
+            if (field is null)
+            {
+                field = new TextBox { IsReadOnly = true, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+                panel.Children.Clear();
+                panel.Children.Add(field);
+            }
+            field.Text = string.Join(", ", arr.Select(InternalSortingAlgorithms.FormatNumber));
+            return;
+        }
+
         panel.Children.Clear();
         if (arr.Length == 0)
         {
             panel.Children.Add(new TextBlock { Text = "[]", FontSize = 12.5, Foreground = Brushes.SlateGray });
             return;
         }
+        var chips = new WrapPanel();
+        panel.Children.Add(chips);
         foreach (var v in arr)
         {
-            panel.Children.Add(new Border
+            chips.Children.Add(new Border
             {
                 Background = BrushFromHex(isDone ? "#DCFCE7" : "#F1F5F9"),
                 BorderBrush = BrushFromHex(isDone ? "#86EFAC" : "#E2E8F0"),
