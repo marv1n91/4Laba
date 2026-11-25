@@ -10,6 +10,8 @@ public enum LexicographicAlgorithm
     AbcRadixSort
 }
 
+public sealed record LexicographicTraceStep(string Title, string Explanation, IReadOnlyList<string> Items);
+
 /// <summary>
 /// Строка таблицы частот слов.
 /// </summary>

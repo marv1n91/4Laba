@@ -421,7 +421,10 @@ public partial class ExternalSortView : UserControl
         TxtExplanation.Text = st.Explanation;
 
         FilesVizPanel.Children.Clear();
-        var mainCard = MakeFileCard("Основной файл (main.jsonl)", st.MainFileRecords, "#EFF6FF", "#93C5FD");
+        if (st.MergeDecision is { } decision)
+            FilesVizPanel.Children.Add(MakeMergeDecisionCard(decision, st.PassNumber));
+        var mainCard = MakeFileCard("Основной файл (main.jsonl)", st.MainFileRecords, "#EFF6FF", "#93C5FD",
+            st.MergeDecision?.OutputPosition);
         FilesVizPanel.Children.Add(mainCard);
 
         var auxGrid = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
@@ -450,14 +453,55 @@ public partial class ExternalSortView : UserControl
         if (_logs.Count > 0) LstLog.ScrollIntoView(_logs[^1]);
     }
 
-    private static Border MakeFileCard(string title, List<FileRecordPreview> records, string bgHex, string borderHex)
+    private static Border MakeMergeDecisionCard(ExternalMergeDecision decision, int passNumber)
+    {
+        var content = new StackPanel();
+        content.Children.Add(new TextBlock
+        {
+            Text = decision.Candidates.Count > 1 ? $"Проход {passNumber} · первые записи активных серий"
+                : $"Проход {passNumber} · дописываем остаток серии",
+            TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.Bold, FontSize = 13
+        });
+        var candidates = new WrapPanel { Margin = new Thickness(0, 6, 0, 6) };
+        foreach (var candidate in decision.Candidates)
+        {
+            bool selected = candidate == decision.Chosen;
+            var entry = new StackPanel { MaxWidth = 260 };
+            string heading = selected ? $"{candidate.FileName} · выбрана" : candidate.FileName;
+            if (selected && decision.HasEqualMinimum) heading += " при равенстве";
+            entry.Children.Add(new TextBlock { Text = heading,
+                FontWeight = FontWeights.SemiBold, FontSize = 11.5,
+                Foreground = FileBrush(selected ? "#166534" : "#475569") });
+            entry.Children.Add(new TextBlock { Text = $"Ключ = {(string.IsNullOrWhiteSpace(candidate.Record.Key) ? "(пусто)" : candidate.Record.Key)}",
+                TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.Bold, FontSize = 14 });
+            if (!string.IsNullOrEmpty(candidate.Record.Label) && candidate.Record.Label != candidate.Record.Key)
+                entry.Children.Add(new TextBlock { Text = candidate.Record.Label, FontSize = 11.5, TextWrapping = TextWrapping.Wrap });
+            candidates.Children.Add(new Border { Child = entry, Padding = new Thickness(9, 6, 9, 6),
+                Margin = new Thickness(0, 0, 6, 5), CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1),
+                BorderBrush = FileBrush(selected ? "#86EFAC" : "#CBD5E1"), Background = FileBrush(selected ? "#DCFCE7" : "#FFFFFF") });
+        }
+        content.Children.Add(candidates);
+        content.Children.Add(new TextBlock
+        {
+            Text = $"→ В основной файл, позиция {decision.OutputPosition} · {decision.Chosen.Record.DisplayText}",
+            TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold, Foreground = FileBrush("#166534")
+        });
+        return new Border { Child = content, Background = FileBrush("#F8FAFC"), BorderBrush = FileBrush("#CBD5E1"),
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 0, 0, 8) };
+    }
+
+    private static SolidColorBrush FileBrush(string hex) => (SolidColorBrush)new BrushConverter().ConvertFromString(hex)!;
+
+    private static Border MakeFileCard(string title, List<FileRecordPreview> records, string bgHex, string borderHex,
+        int? writtenPosition = null)
     {
         var stack = new StackPanel();
         var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
         head.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.Bold, FontSize = 12.5 });
         head.Children.Add(new TextBlock
         {
-            Text = $"{records.Count} записей",
+            Text = records.Count == 0 ? string.Empty : $"С начала файла · {records.Count} зап.",
             FontSize = 11.5,
             Foreground = Brushes.SlateGray,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -471,17 +515,19 @@ public partial class ExternalSortView : UserControl
         }
         else
         {
-            foreach (var r in records)
+            for (int i = 0; i < records.Count; i++)
             {
+                var record = records[i];
+                bool justWritten = i + 1 == writtenPosition;
                 chips.Children.Add(new Border
                 {
-                    Background = Brushes.White,
-                    BorderBrush = (SolidColorBrush)new BrushConverter().ConvertFromString("#CBD5E1")!,
+                    Background = justWritten ? FileBrush("#DCFCE7") : Brushes.White,
+                    BorderBrush = FileBrush(justWritten ? "#16A34A" : "#CBD5E1"),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(5),
                     Padding = new Thickness(6, 2, 6, 2),
                     Margin = new Thickness(0, 0, 5, 4),
-                    Child = new TextBlock { Text = r.DisplayText, FontSize = 11.5 }
+                    Child = new TextBlock { Text = record.DisplayText, FontSize = 11.5 }
                 });
             }
         }
@@ -489,8 +535,8 @@ public partial class ExternalSortView : UserControl
 
         return new Border
         {
-            Background = (SolidColorBrush)new BrushConverter().ConvertFromString(bgHex)!,
-            BorderBrush = (SolidColorBrush)new BrushConverter().ConvertFromString(borderHex)!,
+            Background = FileBrush(bgHex),
+            BorderBrush = FileBrush(borderHex),
             BorderThickness = new Thickness(1.3),
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(10, 8, 10, 8),

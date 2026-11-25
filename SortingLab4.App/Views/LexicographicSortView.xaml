@@ -65,6 +65,27 @@
                 </StackPanel>
             </Border>
 
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="Лексикографическая сортировка по шагам" FontSize="15.5" FontWeight="Bold" Margin="0,0,0,5" />
+                    <TextBlock x:Name="TxtTraceRule" TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}" />
+                    <WrapPanel Margin="0,8,0,8">
+                        <Button x:Name="BtnTracePrevious" Content="Предыдущий шаг" Style="{StaticResource SecondaryButton}"
+                                IsEnabled="False" Margin="0,0,8,0" Click="TracePrevious_Click" />
+                        <Button x:Name="BtnTraceNext" Content="Следующий шаг" Style="{StaticResource SecondaryButton}"
+                                IsEnabled="False" Margin="0,0,10,0" Click="TraceNext_Click" />
+                        <TextBlock x:Name="TxtTraceCounter" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" />
+                    </WrapPanel>
+                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                        <StackPanel>
+                            <TextBlock x:Name="TxtTraceTitle" FontWeight="Bold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="TxtTraceDetail" TextWrapping="Wrap" Margin="0,3,0,0" />
+                            <WrapPanel x:Name="TraceItemsPanel" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
             <!-- Отсортированные слова + Таблица частот -->
             <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>

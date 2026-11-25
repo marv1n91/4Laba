@@ -250,6 +250,26 @@ RunTest("Большая таблица (120 записей, 6 столбцов, 
     }
 });
 
+RunTest("Внешнее слияние показывает сравниваемые записи и дописывание остатка", () =>
+{
+    var rows = new[] { 3, 5, 1, 3, 4, 0, 6 }.Select((key, index) => new[] { $"Запись {index + 1}", key.ToString() }).ToList();
+    foreach (var method in allExternal)
+    {
+        var result = ExternalSortingAlgorithms.Sort(method, ["Имя", "Ключ"], rows, 1, KeyComparisonType.Number);
+        var writes = result.Steps.Where(step => step.MergeDecision is not null).ToList();
+        Assert(writes.Any(step => step.OperationType == "merge_compare" && step.MergeDecision!.HasEqualMinimum), $"{method}: не показано равенство ключей");
+        Assert(writes.Any(step => step.OperationType == "merge_append" && step.MergeDecision!.Candidates.Count == 1), $"{method}: не показан остаток серии");
+        foreach (var step in writes)
+        {
+            var decision = step.MergeDecision!;
+            var written = step.MainFileRecords[decision.OutputPosition - 1];
+            Assert(written.DisplayText == decision.Chosen.Record.DisplayText, $"{method}: записана другая строка");
+            Assert(int.Parse(decision.Chosen.Record.Key) == decision.Candidates.Min(item => int.Parse(item.Record.Key)),
+                $"{method}: выбран неверный ключ");
+        }
+    }
+});
+
 RunTest("Пустой и некорректный файл выбрасывают ошибку", () =>
 {
     bool threwEmpty = false;
@@ -293,6 +313,21 @@ RunTest("Русские и английские слова: полное сов�
     var q = LexicographicSortingAlgorithms.QuickSortWords(words);
     var r = LexicographicSortingAlgorithms.AbcRadixSortWords(words);
     Assert(ArraysEqual(q, r), "Расхождение на смешанном тексте");
+});
+
+RunTest("Лексикографические шаги показывают причину порядка и дают тот же итог", () =>
+{
+    string[] words = ["котик", "кит", "кот", "ёж", "еж"];
+    foreach (var algorithm in Enum.GetValues<LexicographicAlgorithm>())
+    {
+        var trace = LexicographicSortingAlgorithms.TraceWords(algorithm, words);
+        Assert(ArraysEqual(trace[0].Items, words), $"{algorithm}: неверный исходный шаг");
+        Assert(ArraysEqual(trace[^1].Items, LexicographicSortingAlgorithms.SortWords(algorithm, words)), $"{algorithm}: неверный итог разбора");
+        Assert(algorithm == LexicographicAlgorithm.AbcRadixSort
+                ? trace.Any(step => step.Items.Contains("конец слова → кот"))
+                : trace.Any(step => step.Explanation.Contains("На позиции 2 различаются")),
+            $"{algorithm}: не показано правило сравнения");
+    }
 });
 
 RunTest("Эксперименты производительности (100, 500, 1000, 2000, 5000 слов)", () =>

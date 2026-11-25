@@ -130,11 +130,7 @@ public static class ExternalSortingAlgorithms
             if (string.IsNullOrWhiteSpace(line)) continue;
             var rec = JsonSerializer.Deserialize<string[]>(line);
             if (rec is null) continue;
-            list.Add(new FileRecordPreview
-            {
-                Key = keyCol < rec.Length ? rec[keyCol] : string.Empty,
-                Label = rec.Length > 0 ? rec[0] : string.Empty
-            });
+            list.Add(PreviewRecord(rec, keyCol));
             count++;
         }
         return list;
@@ -155,11 +151,59 @@ public static class ExternalSortingAlgorithms
         return result;
     }
 
-    private static string FormatRecord(string[] rec, int keyCol)
+    private static FileRecordPreview PreviewRecord(string[] record, int keyCol) => new()
     {
-        string keyVal = keyCol < rec.Length ? rec[keyCol] : string.Empty;
-        if (rec.Length == 1 || keyCol == 0) return $"«{keyVal}»";
-        return $"«{rec[0]}» (ключ: {keyVal})";
+        Key = keyCol < record.Length ? record[keyCol] : string.Empty,
+        Label = record.Length > 0 ? record[0] : string.Empty
+    };
+
+    private static void RecordStep(List<ExternalSortStep> steps, int maxSteps, int keyCol,
+        string type, string label, int passNumber, string explanation,
+        string mainPath, string[] auxPaths, string[] auxNames, ExternalMergeDecision? decision = null)
+    {
+        if (steps.Count >= maxSteps) return;
+
+        var auxSnapshots = new List<AuxFileSnapshot>(auxPaths.Length);
+        for (int i = 0; i < auxPaths.Length; i++)
+        {
+            auxSnapshots.Add(new AuxFileSnapshot
+            {
+                Name = auxNames[i],
+                Records = ReadFilePreview(auxPaths[i], keyCol),
+                IsActiveSource = decision?.Chosen.FileName == auxNames[i]
+            });
+        }
+
+        steps.Add(new ExternalSortStep
+        {
+            StepNumber = steps.Count + 1,
+            OperationType = type,
+            OperationLabel = label,
+            PassNumber = passNumber,
+            Explanation = explanation,
+            MainFileRecords = ReadFilePreview(mainPath, keyCol),
+            AuxFiles = auxSnapshots,
+            MergeDecision = decision
+        });
+    }
+
+    private static void RecordMergeWrite(List<ExternalSortStep> steps, int maxSteps, int keyCol, int passNumber,
+        string mainPath, string[] auxPaths, string[] auxNames, int outputPosition, int selectedFile, bool equalMinimum,
+        IReadOnlyList<(int File, string[] Record)> heads)
+    {
+        if (steps.Count >= maxSteps) return;
+
+        var candidates = heads.Select(head => new ExternalMergeCandidate(auxNames[head.File], PreviewRecord(head.Record, keyCol))).ToArray();
+        var chosen = candidates.First(candidate => candidate.FileName == auxNames[selectedFile]);
+        var decision = new ExternalMergeDecision(candidates, chosen, outputPosition, equalMinimum);
+        bool hasComparison = candidates.Length > 1;
+        string reason = candidates.Length == 1 ? "Осталась одна активная серия, поэтому сравнение не нужно."
+            : equalMinimum ? "Минимальные ключи равны, берём запись из более раннего файла."
+            : "Берём запись с наименьшим ключом.";
+        RecordStep(steps, maxSteps, keyCol, hasComparison ? "merge_compare" : "merge_append",
+            hasComparison ? "Сравнение и слияние" : "Остаток серии", passNumber,
+            $"{reason} Записываем «{chosen.Record.DisplayText}» в основной файл на позицию {outputPosition}.",
+            mainPath, auxPaths, auxNames, decision);
     }
 
     public static ExternalSortResult Sort(
@@ -194,30 +238,9 @@ public static class ExternalSortingAlgorithms
         var stats = new ExternalSortStats { TotalRecords = rows.Count, Ways = 2 };
 
         void RecordStep(string type, string label, int passNum, string explanation,
-            string mainPath, string[] auxPaths, string[] auxNames, string? activeAux = null)
-        {
-            if (steps.Count >= maxSteps) return;
-            var auxSnaps = new List<AuxFileSnapshot>();
-            for (int i = 0; i < auxPaths.Length; i++)
-            {
-                auxSnaps.Add(new AuxFileSnapshot
-                {
-                    Name = auxNames[i],
-                    Records = ReadFilePreview(auxPaths[i], keyCol),
-                    IsActiveSource = activeAux == auxNames[i]
-                });
-            }
-            steps.Add(new ExternalSortStep
-            {
-                StepNumber = steps.Count + 1,
-                OperationType = type,
-                OperationLabel = label,
-                PassNumber = passNum,
-                Explanation = explanation,
-                MainFileRecords = ReadFilePreview(mainPath, keyCol),
-                AuxFiles = auxSnaps
-            });
-        }
+            string mainPath, string[] auxPaths, string[] auxNames) =>
+            ExternalSortingAlgorithms.RecordStep(steps, maxSteps, keyCol, type, label, passNum, explanation,
+                mainPath, auxPaths, auxNames);
 
         if (rows.Count <= 1)
         {
@@ -283,6 +306,7 @@ public static class ExternalSortingAlgorithms
                 {
                     var recA = ReadRecord(fa);
                     var recB = ReadRecord(fb);
+                    int outputPosition = 0;
 
                     while (recA is not null || recB is not null)
                     {
@@ -290,25 +314,22 @@ public static class ExternalSortingAlgorithms
                         while (countA < runLen && countB < runLen && recA is not null && recB is not null)
                         {
                             stats.Comparisons++;
-                            if (CompareRecords(recA, recB, keyCol, keyType) <= 0)
+                            int comparison = CompareRecords(recA, recB, keyCol, keyType);
+                            int selectedFile = comparison <= 0 ? 0 : 1;
+                            WriteRecord(fm, selectedFile == 0 ? recA : recB);
+                            fm.Flush();
+                            stats.Moves++;
+                            RecordMergeWrite(steps, maxSteps, keyCol, stats.Passes, mainPath, auxPaths, auxNames,
+                                ++outputPosition, selectedFile, comparison == 0, [(0, recA), (1, recB)]);
+                            if (selectedFile == 0)
                             {
-                                string expl = $"Проход {stats.Passes}: сравниваем {FormatRecord(recA, keyCol)} (Файл A) и {FormatRecord(recB, keyCol)} (Файл B). Берём запись из Файла A.";
-                                WriteRecord(fm, recA);
-                                fm.Flush();
-                                stats.Moves++;
                                 recA = ReadRecord(fa);
                                 countA++;
-                                RecordStep("merge_compare", "Сравнение и слияние", stats.Passes, expl, mainPath, auxPaths, auxNames, "Файл A");
                             }
                             else
                             {
-                                string expl = $"Проход {stats.Passes}: сравниваем {FormatRecord(recA, keyCol)} (Файл A) и {FormatRecord(recB, keyCol)} (Файл B). Берём запись из Файла B.";
-                                WriteRecord(fm, recB);
-                                fm.Flush();
-                                stats.Moves++;
                                 recB = ReadRecord(fb);
                                 countB++;
-                                RecordStep("merge_compare", "Сравнение и слияние", stats.Passes, expl, mainPath, auxPaths, auxNames, "Файл B");
                             }
                         }
 
@@ -317,6 +338,8 @@ public static class ExternalSortingAlgorithms
                             WriteRecord(fm, recA);
                             fm.Flush();
                             stats.Moves++;
+                            RecordMergeWrite(steps, maxSteps, keyCol, stats.Passes, mainPath, auxPaths, auxNames,
+                                ++outputPosition, 0, false, [(0, recA)]);
                             recA = ReadRecord(fa);
                             countA++;
                         }
@@ -325,6 +348,8 @@ public static class ExternalSortingAlgorithms
                             WriteRecord(fm, recB);
                             fm.Flush();
                             stats.Moves++;
+                            RecordMergeWrite(steps, maxSteps, keyCol, stats.Passes, mainPath, auxPaths, auxNames,
+                                ++outputPosition, 1, false, [(1, recB)]);
                             recB = ReadRecord(fb);
                             countB++;
                         }
@@ -385,30 +410,9 @@ public static class ExternalSortingAlgorithms
         var stats = new ExternalSortStats { TotalRecords = rows.Count, Ways = 2 };
 
         void RecordStep(string type, string label, int passNum, string explanation,
-            string mainPath, string[] auxPaths, string[] auxNames, string? activeAux = null)
-        {
-            if (steps.Count >= maxSteps) return;
-            var auxSnaps = new List<AuxFileSnapshot>();
-            for (int i = 0; i < auxPaths.Length; i++)
-            {
-                auxSnaps.Add(new AuxFileSnapshot
-                {
-                    Name = auxNames[i],
-                    Records = ReadFilePreview(auxPaths[i], keyCol),
-                    IsActiveSource = activeAux == auxNames[i]
-                });
-            }
-            steps.Add(new ExternalSortStep
-            {
-                StepNumber = steps.Count + 1,
-                OperationType = type,
-                OperationLabel = label,
-                PassNumber = passNum,
-                Explanation = explanation,
-                MainFileRecords = ReadFilePreview(mainPath, keyCol),
-                AuxFiles = auxSnaps
-            });
-        }
+            string mainPath, string[] auxPaths, string[] auxNames) =>
+            ExternalSortingAlgorithms.RecordStep(steps, maxSteps, keyCol, type, label, passNum, explanation,
+                mainPath, auxPaths, auxNames);
 
         if (rows.Count <= 1)
         {
@@ -486,6 +490,7 @@ public static class ExternalSortingAlgorithms
                 {
                     var recA = ReadRecord(fa);
                     var recB = ReadRecord(fb);
+                    int outputPosition = 0;
 
                     while (recA is not null || recB is not null)
                     {
@@ -495,29 +500,25 @@ public static class ExternalSortingAlgorithms
                         while (!endA && !endB)
                         {
                             stats.Comparisons++;
-                            if (CompareRecords(recA!, recB!, keyCol, keyType) <= 0)
+                            int comparison = CompareRecords(recA!, recB!, keyCol, keyType);
+                            int selectedFile = comparison <= 0 ? 0 : 1;
+                            var chosen = (selectedFile == 0 ? recA : recB)!;
+                            WriteRecord(fm, chosen);
+                            fm.Flush();
+                            stats.Moves++;
+                            RecordMergeWrite(steps, maxSteps, keyCol, stats.Passes, mainPath, auxPaths, auxNames,
+                                ++outputPosition, selectedFile, comparison == 0, [(0, recA!), (1, recB!)]);
+                            if (selectedFile == 0)
                             {
-                                var chosen = recA!;
-                                string expl = $"Проход {stats.Passes}: сравниваем {FormatRecord(recA!, keyCol)} (Файл A) и {FormatRecord(recB!, keyCol)} (Файл B). Забираем из Файла A.";
-                                WriteRecord(fm, chosen);
-                                fm.Flush();
-                                stats.Moves++;
                                 var nextA = ReadRecord(fa);
                                 if (nextA is null || CompareRecords(nextA, chosen, keyCol, keyType) < 0) endA = true;
                                 recA = nextA;
-                                RecordStep("merge_compare", "Сравнение и слияние", stats.Passes, expl, mainPath, auxPaths, auxNames, "Файл A");
                             }
                             else
                             {
-                                var chosen = recB!;
-                                string expl = $"Проход {stats.Passes}: сравниваем {FormatRecord(recA!, keyCol)} (Файл A) и {FormatRecord(recB!, keyCol)} (Файл B). Забираем из Файла B.";
-                                WriteRecord(fm, chosen);
-                                fm.Flush();
-                                stats.Moves++;
                                 var nextB = ReadRecord(fb);
                                 if (nextB is null || CompareRecords(nextB, chosen, keyCol, keyType) < 0) endB = true;
                                 recB = nextB;
-                                RecordStep("merge_compare", "Сравнение и слияние", stats.Passes, expl, mainPath, auxPaths, auxNames, "Файл B");
                             }
                         }
 
@@ -527,6 +528,8 @@ public static class ExternalSortingAlgorithms
                             WriteRecord(fm, chosen);
                             fm.Flush();
                             stats.Moves++;
+                            RecordMergeWrite(steps, maxSteps, keyCol, stats.Passes, mainPath, auxPaths, auxNames,
+                                ++outputPosition, 0, false, [(0, chosen)]);
                             var nextA = ReadRecord(fa);
                             if (nextA is null || CompareRecords(nextA, chosen, keyCol, keyType) < 0) endA = true;
                             recA = nextA;
@@ -538,6 +541,8 @@ public static class ExternalSortingAlgorithms
                             WriteRecord(fm, chosen);
                             fm.Flush();
                             stats.Moves++;
+                            RecordMergeWrite(steps, maxSteps, keyCol, stats.Passes, mainPath, auxPaths, auxNames,
+                                ++outputPosition, 1, false, [(1, chosen)]);
                             var nextB = ReadRecord(fb);
                             if (nextB is null || CompareRecords(nextB, chosen, keyCol, keyType) < 0) endB = true;
                             recB = nextB;
@@ -598,30 +603,9 @@ public static class ExternalSortingAlgorithms
         var stats = new ExternalSortStats { TotalRecords = rows.Count, Ways = ways };
 
         void RecordStep(string type, string label, int passNum, string explanation,
-            string mainPath, string[] auxPaths, string[] auxNames, string? activeAux = null)
-        {
-            if (steps.Count >= maxSteps) return;
-            var auxSnaps = new List<AuxFileSnapshot>();
-            for (int i = 0; i < auxPaths.Length; i++)
-            {
-                auxSnaps.Add(new AuxFileSnapshot
-                {
-                    Name = auxNames[i],
-                    Records = ReadFilePreview(auxPaths[i], keyCol),
-                    IsActiveSource = activeAux == auxNames[i]
-                });
-            }
-            steps.Add(new ExternalSortStep
-            {
-                StepNumber = steps.Count + 1,
-                OperationType = type,
-                OperationLabel = label,
-                PassNumber = passNum,
-                Explanation = explanation,
-                MainFileRecords = ReadFilePreview(mainPath, keyCol),
-                AuxFiles = auxSnaps
-            });
-        }
+            string mainPath, string[] auxPaths, string[] auxNames) =>
+            ExternalSortingAlgorithms.RecordStep(steps, maxSteps, keyCol, type, label, passNum, explanation,
+                mainPath, auxPaths, auxNames);
 
         if (rows.Count <= 1)
         {
@@ -710,6 +694,7 @@ public static class ExternalSortingAlgorithms
 
                     var heads = new string[]?[ways];
                     for (int i = 0; i < ways; i++) heads[i] = ReadRecord(readers[i]);
+                    int outputPosition = 0;
 
                     while (AnyNotNull(heads))
                     {
@@ -720,11 +705,12 @@ public static class ExternalSortingAlgorithms
                         {
                             // Ручной поиск минимума среди текущих первых записей всех активных файлов
                             int bestIdx = -1;
-                            var compared = new List<string>();
+                            bool equalMinimum = false;
+                            var candidates = steps.Count < maxSteps ? new List<(int File, string[] Record)>(ways) : null;
                             for (int i = 0; i < ways; i++)
                             {
                                 if (!runActive[i] || heads[i] is null) continue;
-                                compared.Add($"{auxNames[i]}: {FormatRecord(heads[i]!, keyCol)}");
+                                candidates?.Add((i, heads[i]!));
                                 if (bestIdx == -1)
                                 {
                                     bestIdx = i;
@@ -732,10 +718,13 @@ public static class ExternalSortingAlgorithms
                                 else
                                 {
                                     stats.Comparisons++;
-                                    if (CompareRecords(heads[i]!, heads[bestIdx]!, keyCol, keyType) < 0)
+                                    int comparison = CompareRecords(heads[i]!, heads[bestIdx]!, keyCol, keyType);
+                                    if (comparison < 0)
                                     {
                                         bestIdx = i;
+                                        equalMinimum = false;
                                     }
+                                    else if (comparison == 0) equalMinimum = true;
                                 }
                             }
 
@@ -743,13 +732,11 @@ public static class ExternalSortingAlgorithms
                             WriteRecord(fm, chosen);
                             fm.Flush();
                             stats.Moves++;
+                            outputPosition++;
 
-                            if (compared.Count > 1)
-                            {
-                                RecordStep("merge_compare", $"Сравнение {compared.Count} серий", stats.Passes,
-                                    $"Проход {stats.Passes}: сравниваем первые записи ({string.Join("; ", compared)}). Наименьшая: {FormatRecord(chosen, keyCol)} из {auxNames[bestIdx]}.",
-                                    mainPath, auxPaths, auxNames, auxNames[bestIdx]);
-                            }
+                            if (candidates is not null)
+                                RecordMergeWrite(steps, maxSteps, keyCol, stats.Passes, mainPath, auxPaths, auxNames,
+                                    outputPosition, bestIdx, equalMinimum, candidates);
 
                             var nextRec = ReadRecord(readers[bestIdx]);
                             if (nextRec is null || CompareRecords(nextRec, chosen, keyCol, keyType) < 0)

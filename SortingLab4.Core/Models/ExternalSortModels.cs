@@ -53,6 +53,14 @@ public sealed class AuxFileSnapshot
     public bool IsActiveSource { get; init; }
 }
 
+public sealed record ExternalMergeCandidate(string FileName, FileRecordPreview Record);
+
+public sealed record ExternalMergeDecision(
+    IReadOnlyList<ExternalMergeCandidate> Candidates,
+    ExternalMergeCandidate Chosen,
+    int OutputPosition,
+    bool HasEqualMinimum);
+
 /// <summary>
 /// Один шаг визуализации внешней сортировки.
 /// </summary>
@@ -65,6 +73,7 @@ public sealed class ExternalSortStep
     public string Explanation { get; init; } = string.Empty;
     public List<FileRecordPreview> MainFileRecords { get; init; } = new();
     public List<AuxFileSnapshot> AuxFiles { get; init; } = new();
+    public ExternalMergeDecision? MergeDecision { get; init; }
 }
 
 /// <summary>

@@ -11,6 +11,8 @@ namespace SortingLab4.Core.Algorithms;
 /// </summary>
 public static class LexicographicSortingAlgorithms
 {
+    public const int TraceWordLimit = 12;
+    private const int TraceStepLimit = 400;
     // Единый алфавит: апостроф, дефис, цифры, латиница a-z, кириллица а-я (с «ё» после «е»)
     private const string Alphabet = "'-0123456789abcdefghijklmnopqrstuvwxyzабвгдеёжзийклмнопрстуфхцчшщъыьэюя";
     private static readonly Dictionary<char, int> CharBucket = BuildCharBucket();
@@ -80,16 +82,20 @@ public static class LexicographicSortingAlgorithms
     /// <summary>
     /// Лексикографическое сравнение двух слов в едином алфавитном порядке.
     /// </summary>
-    public static int CompareWords(string a, string b)
+    public static int CompareWords(string a, string b) => CompareWords(a, b, out _);
+
+    private static int CompareWords(string a, string b, out int decisionIndex)
     {
+        int limit = Math.Min(a.Length, b.Length);
+        decisionIndex = limit;
         if (ReferenceEquals(a, b) || a == b) return 0;
 
-        int limit = Math.Min(a.Length, b.Length);
         for (int i = 0; i < limit; i++)
         {
             char ca = a[i];
             char cb = b[i];
             if (ca == cb) continue;
+            decisionIndex = i;
 
             int ra = CharBucket.TryGetValue(ca, out int ba) ? ba : AlphabetBucketsCount + char.ToLowerInvariant(ca);
             int rb = CharBucket.TryGetValue(cb, out int bb) ? bb : AlphabetBucketsCount + char.ToLowerInvariant(cb);
@@ -102,13 +108,44 @@ public static class LexicographicSortingAlgorithms
         return 0;
     }
 
+    public static IReadOnlyList<LexicographicTraceStep> TraceWords(LexicographicAlgorithm algorithm, string[] words)
+    {
+        string[] sample = words.Take(TraceWordLimit).ToArray();
+        if (sample.Length == 0) return [];
+        var trace = new List<LexicographicTraceStep>
+        {
+            new("Исходные слова", words.Length > sample.Length
+                ? $"Разбираем первые {sample.Length} слов из {words.Length}." : "Слова в порядке появления в тексте.", sample)
+        };
+        var sorted = SortWords(algorithm, sample, trace);
+        trace.Add(new("Готово", trace.Count == TraceStepLimit
+            ? $"Достигнут предел показа в {TraceStepLimit} шагов. Ниже итог сортировки выбранных слов."
+            : "Слова в лексикографическом порядке.", sorted));
+        return trace;
+    }
+
+    private static int CompareForTrace(string a, string b, List<LexicographicTraceStep>? trace, string title)
+    {
+        if (trace is not { Count: < TraceStepLimit }) return CompareWords(a, b);
+        int result = CompareWords(a, b, out int index);
+        string earlier = result < 0 ? a : b;
+        string explanation = result == 0 ? "Слова совпадают."
+            : index == Math.Min(a.Length, b.Length) ? $"«{earlier}» заканчивается раньше и идёт первым."
+            : $"На позиции {index + 1} различаются «{a[index]}» и «{b[index]}». По порядку символов «{earlier}» идёт первым.";
+        trace.Add(new(title, explanation, [$"«{a}»", $"«{b}»"]));
+        return result;
+    }
+
     public static string[] SortWords(LexicographicAlgorithm algorithm, string[] words)
+        => SortWords(algorithm, words, null);
+
+    private static string[] SortWords(LexicographicAlgorithm algorithm, string[] words, List<LexicographicTraceStep>? trace)
     {
         return algorithm switch
         {
-            LexicographicAlgorithm.QuickSortHoare => QuickSortWords(words),
-            LexicographicAlgorithm.MergeSort => MergeSortWords(words),
-            LexicographicAlgorithm.AbcRadixSort => AbcRadixSortWords(words),
+            LexicographicAlgorithm.QuickSortHoare => QuickSortWords(words, trace),
+            LexicographicAlgorithm.MergeSort => MergeSortWords(words, trace),
+            LexicographicAlgorithm.AbcRadixSort => AbcRadixSortWords(words, trace),
             _ => throw new ArgumentOutOfRangeException(nameof(algorithm))
         };
     }
@@ -116,7 +153,9 @@ public static class LexicographicSortingAlgorithms
     // =========================================================================
     // АЛГОРИТМ 1А: QUICK SORT (Быстрая сортировка Хоара для слов)
     // =========================================================================
-    public static string[] QuickSortWords(string[] words)
+    public static string[] QuickSortWords(string[] words) => QuickSortWords(words, null);
+
+    private static string[] QuickSortWords(string[] words, List<LexicographicTraceStep>? trace)
     {
         var arr = (string[])words.Clone();
         int n = arr.Length;
@@ -131,16 +170,23 @@ public static class LexicographicSortingAlgorithms
             if (left >= right) continue;
 
             string pivot = arr[(left + right) / 2];
+            if (trace is { Count: < TraceStepLimit })
+                trace.Add(new("Опорное слово", $"Берём «{pivot}» из середины участка {left + 1}–{right + 1}.", arr[left..(right + 1)]));
             int i = left;
             int j = right;
 
             while (i <= j)
             {
-                while (CompareWords(arr[i], pivot) < 0) i++;
-                while (CompareWords(arr[j], pivot) > 0) j--;
+                while (CompareForTrace(arr[i], pivot, trace, "Сравнение слева с опорой") < 0) i++;
+                while (CompareForTrace(arr[j], pivot, trace, "Сравнение справа с опорой") > 0) j--;
                 if (i <= j)
                 {
-                    if (i != j) (arr[i], arr[j]) = (arr[j], arr[i]);
+                    if (i != j)
+                    {
+                        (arr[i], arr[j]) = (arr[j], arr[i]);
+                        if (trace is { Count: < TraceStepLimit })
+                            trace.Add(new("Обмен", $"Меняем слова на позициях {i + 1} и {j + 1}.", (string[])arr.Clone()));
+                    }
                     i++;
                     j--;
                 }
@@ -164,7 +210,9 @@ public static class LexicographicSortingAlgorithms
     // =========================================================================
     // АЛГОРИТМ 1Б: MERGE SORT (Сортировка слиянием для слов)
     // =========================================================================
-    public static string[] MergeSortWords(string[] words)
+    public static string[] MergeSortWords(string[] words) => MergeSortWords(words, null);
+
+    private static string[] MergeSortWords(string[] words, List<LexicographicTraceStep>? trace)
     {
         int n = words.Length;
         if (n <= 1) return (string[])words.Clone();
@@ -176,19 +224,28 @@ public static class LexicographicSortingAlgorithms
         {
             if (left >= right) return;
             int mid = (left + right) / 2;
+            if (trace is { Count: < TraceStepLimit })
+                trace.Add(new("Деление", "Сортируем левую и правую части, затем сливаем их.",
+                    [$"Слева · {string.Join(", ", arr[left..(mid + 1)])}", $"Справа · {string.Join(", ", arr[(mid + 1)..(right + 1)])}"]));
             SortRange(left, mid);
             SortRange(mid + 1, right);
 
             int i = left, j = mid + 1, k = left;
             while (i <= mid && j <= right)
             {
-                if (CompareWords(arr[i], arr[j]) <= 0)
+                int order = CompareForTrace(arr[i], arr[j], trace, "Сравнение первых слов двух частей");
+                if (order <= 0)
                     buffer[k++] = arr[i++];
                 else
                     buffer[k++] = arr[j++];
+                if (trace is { Count: < TraceStepLimit })
+                    trace.Add(new("Добавление при слиянии", $"Добавляем «{buffer[k - 1]}» в результат слияния.", buffer[left..k]));
             }
+            int afterComparisons = k;
             while (i <= mid) buffer[k++] = arr[i++];
             while (j <= right) buffer[k++] = arr[j++];
+            if (k > afterComparisons && trace is { Count: < TraceStepLimit })
+                trace.Add(new("Остаток части", "Одна часть закончилась. Дописываем оставшиеся слова по порядку.", buffer[afterComparisons..k]));
 
             for (int p = left; p <= right; p++) arr[p] = buffer[p];
         }
@@ -200,15 +257,17 @@ public static class LexicographicSortingAlgorithms
     // =========================================================================
     // АЛГОРИТМ 2: ABC-СОРТИРОВКА / MSD RADIX SORT (Поразрядная сортировка слов)
     // =========================================================================
-    public static string[] AbcRadixSortWords(string[] words)
+    public static string[] AbcRadixSortWords(string[] words) => AbcRadixSortWords(words, null);
+
+    private static string[] AbcRadixSortWords(string[] words, List<LexicographicTraceStep>? trace)
     {
         if (words.Length <= 1) return (string[])words.Clone();
         var list = new List<string>(words);
-        var sorted = MsdRadixSort(list, 0);
+        var sorted = MsdRadixSort(list, 0, trace);
         return sorted.ToArray();
     }
 
-    private static List<string> MsdRadixSort(List<string> bucketWords, int depth)
+    private static List<string> MsdRadixSort(List<string> bucketWords, int depth, List<LexicographicTraceStep>? trace)
     {
         if (bucketWords.Count <= 1) return bucketWords;
 
@@ -249,6 +308,19 @@ public static class LexicographicSortingAlgorithms
             buckets[bIdx]!.Add(w);
         }
 
+        if (trace is { Count: < TraceStepLimit })
+        {
+            var groups = new List<string>();
+            for (int b = 0; b < buckets.Length; b++)
+            {
+                if (buckets[b] is not { } group) continue;
+                string heading = b == 0 ? "конец слова" : b == otherIdx ? "прочие символы" : $"«{Alphabet[b - 1]}»";
+                groups.Add($"{heading} → {string.Join(", ", group)}");
+            }
+            string prefix = depth == 0 ? string.Empty : $" для слов с началом «{first[..depth]}»";
+            trace.Add(new("Распределение по корзинам", $"Смотрим на символ №{depth + 1}{prefix}. Корзину «конец слова» выводим первой.", groups));
+        }
+
         var result = new List<string>(bucketWords.Count);
 
         // Корзина 0: слова, закончившиеся на текущей глубине
@@ -263,7 +335,7 @@ public static class LexicographicSortingAlgorithms
             if (cur.Count == 1)
                 result.Add(cur[0]);
             else
-                result.AddRange(MsdRadixSort(cur, depth + 1));
+                result.AddRange(MsdRadixSort(cur, depth + 1, trace));
         }
 
         // Корзина прочих символов
@@ -273,7 +345,7 @@ public static class LexicographicSortingAlgorithms
             if (other.Count == 1)
                 result.Add(other[0]);
             else
-                result.AddRange(QuickSortWords(other.ToArray()));
+                result.AddRange(QuickSortWords(other.ToArray(), trace));
         }
 
         return result;

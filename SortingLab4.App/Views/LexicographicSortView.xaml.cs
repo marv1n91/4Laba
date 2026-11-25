@@ -13,9 +13,17 @@ namespace SortingLab4.App.Views;
 
 public partial class LexicographicSortView : UserControl
 {
+    private IReadOnlyList<LexicographicTraceStep>? _traceSteps;
+    private int _traceIndex = -1;
+
     public LexicographicSortView()
     {
         InitializeComponent();
+        TxtInput.TextChanged += (_, _) => ResetTrace();
+        CmbLexAlgo.SelectionChanged += (_, _) => ResetTrace();
+        ChkLowercase.Checked += (_, _) => ResetTrace();
+        ChkLowercase.Unchecked += (_, _) => ResetTrace();
+        ResetTrace();
         Loaded += (_, _) => LoadSampleText();
     }
 
@@ -73,16 +81,82 @@ public partial class LexicographicSortView : UserControl
         }
     }
 
-    private void SortText_Click(object sender, RoutedEventArgs e)
+    private LexicographicAlgorithm SelectedAlgorithm()
     {
-        ShowError(null);
         string tag = (CmbLexAlgo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Quick";
-        var algo = tag switch
+        return tag switch
         {
             "Merge" => LexicographicAlgorithm.MergeSort,
             "Radix" => LexicographicAlgorithm.AbcRadixSort,
             _ => LexicographicAlgorithm.QuickSortHoare
         };
+    }
+
+    private void ResetTrace()
+    {
+        _traceSteps = null;
+        _traceIndex = -1;
+        string rule = SelectedAlgorithm() switch
+        {
+            LexicographicAlgorithm.QuickSortHoare => "Quick Sort сравнивает слова с опорным, перемещает меньшие влево и большие вправо, затем сортирует получившиеся части.",
+            LexicographicAlgorithm.MergeSort => "Merge Sort делит слова на части и при слиянии берёт меньшее из первых оставшихся слов двух частей.",
+            _ => "ABC раскладывает слова по первому символу, затем по второму внутри каждой корзины и так далее. Корзины читаются в порядке символов."
+        };
+        TxtTraceRule.Text = $"{rule} Смотрим слева направо. Первое различие определяет порядок. Если одно слово является началом другого, короткое идёт первым. В порядке символов сначала идут апостроф и дефис, затем цифры, латиница и кириллица. Буква «ё» следует за «е».";
+        TxtTraceTitle.Text = "Начните со следующего шага";
+        TxtTraceDetail.Text = $"Для разбора берём до {LexicographicSortingAlgorithms.TraceWordLimit} первых слов из текста.";
+        TxtTraceCounter.Text = string.Empty;
+        TraceItemsPanel.Children.Clear();
+        BtnTracePrevious.IsEnabled = false;
+        BtnTraceNext.IsEnabled = !string.IsNullOrWhiteSpace(TxtInput.Text);
+    }
+
+    private void TraceNext_Click(object sender, RoutedEventArgs e)
+    {
+        _traceSteps ??= LexicographicSortingAlgorithms.TraceWords(SelectedAlgorithm(),
+            LexicographicSortingAlgorithms.ExtractWords(TxtInput.Text, ChkLowercase.IsChecked == true));
+        if (_traceSteps.Count == 0)
+        {
+            TxtTraceTitle.Text = "В тексте нет слов";
+            TxtTraceDetail.Text = "Введите текст или загрузите пример.";
+            BtnTraceNext.IsEnabled = false;
+            return;
+        }
+        if (_traceIndex + 1 < _traceSteps.Count) ShowTraceStep(_traceIndex + 1);
+    }
+
+    private void TracePrevious_Click(object sender, RoutedEventArgs e)
+    {
+        if (_traceIndex > 0) ShowTraceStep(_traceIndex - 1);
+    }
+
+    private void ShowTraceStep(int index)
+    {
+        var steps = _traceSteps!;
+        _traceIndex = index;
+        var step = steps[index];
+        TxtTraceTitle.Text = step.Title;
+        TxtTraceDetail.Text = step.Explanation;
+        TxtTraceCounter.Text = $"Шаг {index + 1} / {steps.Count}";
+        BtnTracePrevious.IsEnabled = index > 0;
+        BtnTraceNext.IsEnabled = index + 1 < steps.Count;
+
+        TraceItemsPanel.Children.Clear();
+        foreach (string item in step.Items)
+        {
+            TraceItemsPanel.Children.Add(new Border
+            {
+                Background = Brushes.AliceBlue, CornerRadius = new CornerRadius(5),
+                Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(0, 6, 6, 0), MaxWidth = 420,
+                Child = new TextBlock { Text = item, TextWrapping = TextWrapping.Wrap }
+            });
+        }
+    }
+
+    private void SortText_Click(object sender, RoutedEventArgs e)
+    {
+        ShowError(null);
+        var algo = SelectedAlgorithm();
 
         bool lower = ChkLowercase.IsChecked == true;
         var res = LexicographicSortingAlgorithms.ProcessText(TxtInput.Text, algo, lower);
