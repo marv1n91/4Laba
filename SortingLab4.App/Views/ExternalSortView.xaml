@@ -120,7 +120,7 @@
                                    Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                     </DockPanel>
                     <TextBlock x:Name="TxtExplanation" TextWrapping="Wrap" FontSize="14.5"
-                               Text="Выберите сценарий или загрузите файл, настройте метод и нажмите «Запустить сортировку»." />
+                               Text="Выберите сценарий или загрузите файл, затем нажмите «Запустить» или «Следующий шаг»." />
                 </StackPanel>
             </Border>
 

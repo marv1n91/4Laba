@@ -35,6 +35,7 @@ public partial class ExternalSortView : UserControl
     private int _stepIndex = -1;
     private bool _isPlaying;
     private bool _isPaused;
+    private CancellationTokenSource? _preparation;
     private readonly DispatcherTimer _timer;
     private readonly ObservableCollection<LogEntryVm> _logs = new();
 
@@ -44,6 +45,9 @@ public partial class ExternalSortView : UserControl
         LstLog.ItemsSource = _logs;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(550) };
         _timer.Tick += Timer_Tick;
+        foreach (var combo in new[] { CmbMethod, CmbWays, CmbKeyCol, CmbKeyType, CmbFilterCol, CmbFilterVal })
+            combo.SelectionChanged += SortSettings_SelectionChanged;
+        UpdateButtons();
         Loaded += (_, _) => LoadPreset("countries.csv", defaultKeyCol: 4, defaultFilterCol: 1, defaultFilterVal: "Европа");
     }
 
@@ -189,18 +193,26 @@ public partial class ExternalSortView : UserControl
         }
     }
 
+    private void SortSettings_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_result is not null || _preparation is { IsCancellationRequested: false })
+            ResetPlayback();
+    }
+
     private void UpdateButtons()
     {
         bool hasSteps = _result is not null && _result.Steps.Count > 0;
         bool finished = hasSteps && _stepIndex >= _result!.Steps.Count - 1;
-        BtnStart.IsEnabled = _document is not null && !(_isPlaying && !_isPaused);
+        bool canStartOrStep = _document is not null && _preparation is null && !(_isPlaying && !_isPaused);
+        BtnStart.IsEnabled = canStartOrStep;
         BtnPause.IsEnabled = _isPlaying && !_isPaused && !finished;
         BtnResume.IsEnabled = _isPaused && !finished;
-        BtnStep.IsEnabled = hasSteps && !(_isPlaying && !_isPaused) && !finished;
+        BtnStep.IsEnabled = canStartOrStep && !finished;
     }
 
     private void ResetPlayback()
     {
+        _preparation?.Cancel();
         _timer.Stop();
         _isPlaying = false;
         _isPaused = false;
@@ -210,7 +222,7 @@ public partial class ExternalSortView : UserControl
 
         TxtStepBadge.Text = "Ожидание";
         TxtStepCounter.Text = "Шаг 0 / 0";
-        TxtExplanation.Text = "Выберите метод внешней сортировки и ключевой столбец, затем нажмите «Запустить сортировку».";
+        TxtExplanation.Text = "Выберите метод и ключевой столбец. Нажмите «Запустить» для показа или «Следующий шаг» для пошагового разбора.";
         TxtStats.Text = "Проходов: 0  |  Сравнений: 0  |  Перемещений: 0";
         FilesVizPanel.Children.Clear();
         FilesVizPanel.Children.Add(new TextBlock
@@ -226,18 +238,15 @@ public partial class ExternalSortView : UserControl
         UpdateButtons();
     }
 
-    private async void Start_Click(object sender, RoutedEventArgs e)
+    private async Task<bool> EnsureResultAsync()
     {
-        if (_document is null)
-        {
-            ShowError("Сначала загрузите файл или выберите готовый сценарий.");
-            return;
-        }
+        if (_preparation is not null || _document is not { } doc) return false;
+        if (_result is not null) return _result.Steps.Count > 0;
 
         ShowError(null);
-        _timer.Stop();
-        _logs.Clear();
-        BtnStart.IsEnabled = false;
+        using var preparation = new CancellationTokenSource();
+        _preparation = preparation;
+        UpdateButtons();
 
         var methodTag = (CmbMethod.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Direct";
         var method = methodTag switch
@@ -263,7 +272,6 @@ public partial class ExternalSortView : UserControl
 
         try
         {
-            var doc = _document;
             var result = await Task.Run(() =>
             {
                 var workingRows = TableFileService.FilterRows(doc.Rows, filterCol, filterVal);
@@ -271,13 +279,14 @@ public partial class ExternalSortView : UserControl
                     throw new InvalidOperationException("После применения фильтра не осталось ни одной записи для сортировки.");
 
                 var sortRes = ExternalSortingAlgorithms.Sort(method, doc.Headers, workingRows, keyCol, keyType, ways);
+                preparation.Token.ThrowIfCancellationRequested();
                 string outDir = Path.Combine(AppContext.BaseDirectory, "output");
                 sortRes.SavedFilePath = TableFileService.SaveSortedTable(outDir, doc.Headers, sortRes.SortedRows, method, doc.IsSingleColumn);
                 return sortRes;
-            });
+            }, preparation.Token);
 
+            if (preparation.IsCancellationRequested) return false;
             _result = result;
-            _stepIndex = 0;
 
             var st = result.Stats;
             TxtStats.Text = $"Проходов: {st.Passes}  |  Сравнений: {st.Comparisons}  |  Перемещений: {st.Moves}";
@@ -289,22 +298,36 @@ public partial class ExternalSortView : UserControl
             BtnOpenFile.Visibility = Visibility.Visible;
             BtnSaveAs.Visibility = Visibility.Visible;
 
-            _isPlaying = true;
-            _isPaused = false;
-            UpdateButtons();
-            RenderStep(0);
-            if (_result.Steps.Count > 1) _timer.Start();
-            else
-            {
-                _isPlaying = false;
-                UpdateButtons();
-            }
+            return result.Steps.Count > 0;
         }
         catch (Exception ex)
         {
-            ShowError(ex.Message);
+            if (!preparation.IsCancellationRequested) ShowError(ex.Message);
+            return false;
+        }
+        finally
+        {
+            _preparation = null;
             UpdateButtons();
         }
+    }
+
+    private async void Start_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BtnStart.IsEnabled) return;
+        if (_result is not null && _stepIndex >= _result.Steps.Count - 1)
+            ResetPlayback();
+        if (!await EnsureResultAsync()) return;
+
+        if (_stepIndex < 0)
+        {
+            _stepIndex = 0;
+            RenderStep(0);
+        }
+        _isPaused = false;
+        _isPlaying = _stepIndex < _result!.Steps.Count - 1;
+        if (_isPlaying) _timer.Start();
+        UpdateButtons();
     }
 
     private void Pause_Click(object sender, RoutedEventArgs e)
@@ -322,8 +345,9 @@ public partial class ExternalSortView : UserControl
         _timer.Start();
     }
 
-    private void NextStep_Click(object sender, RoutedEventArgs e)
+    private async void NextStep_Click(object sender, RoutedEventArgs e)
     {
+        if (!BtnStep.IsEnabled || !await EnsureResultAsync()) return;
         _timer.Stop();
         _isPlaying = false;
         _isPaused = false;

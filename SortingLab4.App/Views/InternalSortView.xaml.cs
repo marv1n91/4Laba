@@ -612,7 +612,7 @@ public partial class InternalSortView : UserControl
     {
         if (_tagI is null || _tagJ is null || _tagPivot is null || _tagKey is null) return;
 
-        void PositionTag(Border tag, string name, int? idx, double topOffset)
+        void PositionTag(Border tag, int? idx, string text, double topOffset)
         {
             if (idx is null || idx.Value < 0 || idx.Value >= _bars.Count)
             {
@@ -621,7 +621,7 @@ public partial class InternalSortView : UserControl
             }
             bool wasHidden = tag.Visibility != Visibility.Visible;
             tag.Visibility = Visibility.Visible;
-            if (tag.Child is TextBlock label) label.Text = $"{name} · {idx.Value + 1}";
+            if (tag.Child is TextBlock label) label.Text = text;
             tag.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double center = _startX + idx.Value * _colStep + _colWidth / 2;
             double tagWidth = tag.DesiredSize.Width;
@@ -629,7 +629,15 @@ public partial class InternalSortView : UserControl
             double x = Math.Clamp(center - tagWidth / 2, 0, maxLeft);
             Canvas.SetTop(tag, topOffset);
             if (animated && !wasHidden)
+            {
+                double previousLeft = Canvas.GetLeft(tag);
+                if (previousLeft < 0 || previousLeft > maxLeft)
+                {
+                    tag.BeginAnimation(Canvas.LeftProperty, null);
+                    Canvas.SetLeft(tag, Math.Clamp(previousLeft, 0, maxLeft));
+                }
                 UiAnimations.AnimateCanvasLeft(tag, x, durationMs);
+            }
             else
             {
                 tag.BeginAnimation(Canvas.LeftProperty, null);
@@ -640,9 +648,9 @@ public partial class InternalSortView : UserControl
         if (_currentAlgo == InternalSortAlgorithm.QuickHoare)
         {
             // Соседние указатели могут смотреть на один столбец или на узкие соседние столбцы.
-            PositionTag(_tagI, "i", st.PointerI, 4);
-            PositionTag(_tagJ, "j", st.PointerJ, 24);
-            PositionTag(_tagPivot, "pivot", st.PivotIndex, 44);
+            PositionTag(_tagI, st.PointerI, $"i · {st.PointerI + 1}", 4);
+            PositionTag(_tagJ, st.PointerJ, $"j · {st.PointerJ + 1}", 24);
+            PositionTag(_tagPivot, st.PivotIndex, $"pivot · {st.PivotIndex + 1}", 44);
             _tagKey.Visibility = Visibility.Collapsed;
         }
         else if (_currentAlgo == InternalSortAlgorithm.Insertion)
@@ -650,7 +658,19 @@ public partial class InternalSortView : UserControl
             _tagI.Visibility = Visibility.Collapsed;
             _tagJ.Visibility = Visibility.Collapsed;
             _tagPivot.Visibility = Visibility.Collapsed;
-            PositionTag(_tagKey, st.InsertedIndex.HasValue ? "вставлено" : "свободно", st.CurrentIndex ?? st.InsertedIndex, 4);
+            int? position = st.CurrentIndex ?? st.InsertedIndex;
+            if (position is int index && st.KeyValue is double key)
+            {
+                string value = InternalSortingAlgorithms.FormatNumber(key);
+                string text = st.InsertedIndex.HasValue
+                    ? $"Вставили {value} · позиция {index + 1}"
+                    : $"key = {value} · ячейка {index + 1} свободна";
+                PositionTag(_tagKey, index, text, 4);
+            }
+            else
+            {
+                _tagKey.Visibility = Visibility.Collapsed;
+            }
         }
         else
         {
@@ -812,12 +832,7 @@ public partial class InternalSortView : UserControl
         TxtExplanation.Text = st.Explanation;
 
         int? gapIndex = _currentAlgo == InternalSortAlgorithm.Insertion ? st.CurrentIndex : null;
-        if (_currentAlgo == InternalSortAlgorithm.Insertion && st.KeyValue.HasValue)
-        {
-            string key = InternalSortingAlgorithms.FormatNumber(st.KeyValue.Value);
-            TxtAuxInfo.Text = gapIndex.HasValue ? $"В переменной key: {key}" : $"Вставлено: {key}";
-        }
-        else if (_currentAlgo == InternalSortAlgorithm.QuickHoare && st.PivotValue.HasValue)
+        if (_currentAlgo == InternalSortAlgorithm.QuickHoare && st.PivotValue.HasValue)
             TxtAuxInfo.Text = $"Pivot: {InternalSortingAlgorithms.FormatNumber(st.PivotValue.Value)}" +
                 (st.RangeLeft.HasValue && st.RangeRight.HasValue ? $"   Участок: [{st.RangeLeft.Value + 1}..{st.RangeRight.Value + 1}]" : "");
         else if (_currentAlgo == InternalSortAlgorithm.Bubble && st.PassNumber > 0)
