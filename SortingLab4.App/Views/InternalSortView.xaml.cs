@@ -17,6 +17,7 @@ public partial class InternalSortView : UserControl
     private const int MinGeneratedArraySize = 4;
     private const int MaxArraySize = 50;
     private const int ArrayChipsLimit = 40;
+    private const string InsertionGapHint = "Свободное место для вставки";
 
     private sealed class LogEntryVm
     {
@@ -36,6 +37,7 @@ public partial class InternalSortView : UserControl
         public SolidColorBrush FillBrush { get; init; } = null!;
         public TextBlock ValueText { get; init; } = null!;
         public TextBlock IndexText { get; init; } = null!;
+        public bool IsInsertionGap { get; set; }
     }
 
     private InternalSortAlgorithm _currentAlgo = InternalSortAlgorithm.Bubble;
@@ -74,6 +76,7 @@ public partial class InternalSortView : UserControl
     private static readonly Color ColSwapping = ColorFromHex("#EF4444");
     private static readonly Color ColSorted = ColorFromHex("#22C55E");
     private static readonly Color ColKey = ColorFromHex("#7C3AED");
+    private static readonly Color ColInsertionGap = ColorFromHex("#F3E8FF");
     private static readonly Color ColShifted = ColorFromHex("#0EA5E9");
     private static readonly Color ColInserted = ColorFromHex("#10B981");
     private static readonly Color ColLeftPart = ColorFromHex("#0D9488");
@@ -403,6 +406,7 @@ public partial class InternalSortView : UserControl
             var rect = new Border
             {
                 Background = brush,
+                BorderBrush = BrushFromHex("#A78BFA"),
                 Child = valTxt
             };
             var idxTxt = new TextBlock
@@ -482,21 +486,24 @@ public partial class InternalSortView : UserControl
         for (int i = 0; i < _bars.Count; i++)
         {
             var b = _bars[i];
-            double h = ComputeBarHeight(b.Value);
+            double h = b.IsInsertionGap ? 18 : ComputeBarHeight(b.Value);
             double x = _startX + i * _colStep;
             double y = ComputeBarTop(h);
 
             b.Root.Width = _colWidth;
             b.BarRect.Height = h;
             b.BarRect.CornerRadius = cornerRadius;
-            b.BarRect.Padding = padding;
-            b.ValueText.Visibility = labelVisibility;
+            b.BarRect.BorderThickness = b.IsInsertionGap ? new Thickness(1) : new Thickness(0);
+            b.BarRect.Padding = b.IsInsertionGap ? new Thickness(0) : padding;
+            b.ValueText.Visibility = b.IsInsertionGap ? Visibility.Collapsed : labelVisibility;
             int position = i + 1;
             bool showIndex = showLabels || position == 1 || position % 5 == 0 || position == _bars.Count;
             b.IndexText.Visibility = showIndex ? Visibility.Visible : Visibility.Collapsed;
             b.IndexText.FontSize = showLabels ? 11 : Math.Min(9, _colWidth * 0.9);
             b.IndexText.Text = position.ToString();
-            b.Root.ToolTip = $"Позиция {position}, значение {b.ValueText.Text}";
+            b.Root.ToolTip = b.IsInsertionGap
+                ? $"Позиция {position} · {InsertionGapHint}"
+                : $"Позиция {position}, значение {b.ValueText.Text}";
 
             Canvas.SetTop(b.Root, y);
             if (animated)
@@ -509,7 +516,7 @@ public partial class InternalSortView : UserControl
         }
     }
 
-    private void AnimateBarsForStep(InternalSortStep st)
+    private void AnimateBarsForStep(InternalSortStep st, int? gapIndex)
     {
         if (_bars.Count != st.ArraySnapshot.Length)
         {
@@ -538,9 +545,10 @@ public partial class InternalSortView : UserControl
             }
         }
 
-        // Синхронизируем значения с реальным снимком массива (гарантия точности на Insertion Sort и др.)
+        // Снимок хранит физические значения. Освободившуюся ячейку показываем отдельно.
         for (int i = 0; i < _bars.Count; i++)
         {
+            _bars[i].IsInsertionGap = i == gapIndex;
             double expected = st.ArraySnapshot[i];
             if (_bars[i].Value != expected)
             {
@@ -575,11 +583,7 @@ public partial class InternalSortView : UserControl
             if (leftPart.Contains(idx)) targetColor = ColLeftPart;
             if (rightPart.Contains(idx)) targetColor = ColRightPart;
             if (_currentAlgo == InternalSortAlgorithm.QuickHoare && st.PivotIndex == idx) targetColor = ColKey;
-            if (_currentAlgo == InternalSortAlgorithm.Insertion && st.CurrentIndex == idx)
-            {
-                targetColor = ColKey;
-                targetLiftY = -10;
-            }
+            if (bar.IsInsertionGap) targetColor = ColInsertionGap;
             if (_currentAlgo == InternalSortAlgorithm.Insertion && st.ShiftedIndex == idx) targetColor = ColShifted;
             if (_currentAlgo == InternalSortAlgorithm.Insertion && st.InsertedIndex == idx) targetColor = ColInserted;
 
@@ -646,7 +650,7 @@ public partial class InternalSortView : UserControl
             _tagI.Visibility = Visibility.Collapsed;
             _tagJ.Visibility = Visibility.Collapsed;
             _tagPivot.Visibility = Visibility.Collapsed;
-            PositionTag(_tagKey, "ключ", st.CurrentIndex ?? st.InsertedIndex, 4);
+            PositionTag(_tagKey, st.InsertedIndex.HasValue ? "вставлено" : "свободно", st.CurrentIndex ?? st.InsertedIndex, 4);
         }
         else
         {
@@ -761,7 +765,7 @@ public partial class InternalSortView : UserControl
                 new[] { ("#94A3B8", "Обычный"), ("#F59E0B", "Сравнение"), ("#EF4444", "Перестановка"), ("#22C55E", "Отсортировано") }),
             InternalSortAlgorithm.Insertion => (
                 "Insertion Sort (Сортировка вставками)", "Insertion Sort",
-                new[] { ("#22C55E", "Отсортированная часть"), ("#7C3AED", "Ключ"), ("#F59E0B", "Сравнение"), ("#0EA5E9", "Сдвиг"), ("#94A3B8", "Остальные") }),
+                new[] { ("#22C55E", "Отсортированная часть"), ("#A78BFA", "Свободное место"), ("#F59E0B", "Сравнение"), ("#0EA5E9", "Сдвиг"), ("#94A3B8", "Остальные") }),
             InternalSortAlgorithm.Merge => (
                 "Merge Sort (Дерево разделения и слияния)", "Merge Sort",
                 new[] { ("#2563EB", "Активный"), ("#0D9488", "Одно число"), ("#D97706", "Слияние"), ("#16A34A", "Готово") }),
@@ -807,8 +811,12 @@ public partial class InternalSortView : UserControl
         TxtStepCounter.Text = $"Шаг {st.StepNumber} / {_currentResult.Steps.Count}";
         TxtExplanation.Text = st.Explanation;
 
+        int? gapIndex = _currentAlgo == InternalSortAlgorithm.Insertion ? st.CurrentIndex : null;
         if (_currentAlgo == InternalSortAlgorithm.Insertion && st.KeyValue.HasValue)
-            TxtAuxInfo.Text = $"Ключ: {InternalSortingAlgorithms.FormatNumber(st.KeyValue.Value)}";
+        {
+            string key = InternalSortingAlgorithms.FormatNumber(st.KeyValue.Value);
+            TxtAuxInfo.Text = gapIndex.HasValue ? $"В переменной key: {key}" : $"Вставлено: {key}";
+        }
         else if (_currentAlgo == InternalSortAlgorithm.QuickHoare && st.PivotValue.HasValue)
             TxtAuxInfo.Text = $"Pivot: {InternalSortingAlgorithms.FormatNumber(st.PivotValue.Value)}" +
                 (st.RangeLeft.HasValue && st.RangeRight.HasValue ? $"   Участок: [{st.RangeLeft.Value + 1}..{st.RangeRight.Value + 1}]" : "");
@@ -820,9 +828,9 @@ public partial class InternalSortView : UserControl
         if (_currentAlgo == InternalSortAlgorithm.Merge)
             RenderMergeTree(st);
         else
-            AnimateBarsForStep(st);
+            AnimateBarsForStep(st, gapIndex);
 
-        RenderArray(CurrentArrayPanel, st.ArraySnapshot, st.OperationType == "done");
+        RenderArray(CurrentArrayPanel, st.ArraySnapshot, st.OperationType == "done", gapIndex);
         if (st.OperationType == "done")
             RenderArray(FinalArrayPanel, _currentResult.SortedArray, true);
 
@@ -931,7 +939,7 @@ public partial class InternalSortView : UserControl
         return panel;
     }
 
-    private static void RenderArray(Panel panel, double[] arr, bool isDone)
+    private static void RenderArray(Panel panel, double[] arr, bool isDone, int? gapIndex = null)
     {
         if (arr.Length > ArrayChipsLimit)
         {
@@ -942,7 +950,8 @@ public partial class InternalSortView : UserControl
                 panel.Children.Clear();
                 panel.Children.Add(field);
             }
-            field.Text = string.Join(", ", arr.Select(InternalSortingAlgorithms.FormatNumber));
+            field.Text = string.Join(", ", arr.Select((value, index) =>
+                index == gapIndex ? "—" : InternalSortingAlgorithms.FormatNumber(value)));
             return;
         }
 
@@ -954,22 +963,24 @@ public partial class InternalSortView : UserControl
         }
         var chips = new WrapPanel();
         panel.Children.Add(chips);
-        foreach (var v in arr)
+        for (int index = 0; index < arr.Length; index++)
         {
+            bool isGap = index == gapIndex;
             chips.Children.Add(new Border
             {
-                Background = BrushFromHex(isDone ? "#DCFCE7" : "#F1F5F9"),
-                BorderBrush = BrushFromHex(isDone ? "#86EFAC" : "#E2E8F0"),
+                Background = BrushFromHex(isGap ? "#F3E8FF" : isDone ? "#DCFCE7" : "#F1F5F9"),
+                BorderBrush = BrushFromHex(isGap ? "#A78BFA" : isDone ? "#86EFAC" : "#E2E8F0"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(6, 1, 6, 1),
                 Margin = new Thickness(0, 0, 4, 3),
+                ToolTip = isGap ? InsertionGapHint : null,
                 Child = new TextBlock
                 {
-                    Text = InternalSortingAlgorithms.FormatNumber(v),
+                    Text = isGap ? "—" : InternalSortingAlgorithms.FormatNumber(arr[index]),
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 12,
-                    Foreground = BrushFromHex(isDone ? "#166534" : "#18181B")
+                    Foreground = BrushFromHex(isGap ? "#6D28D9" : isDone ? "#166534" : "#18181B")
                 }
             });
         }
